@@ -4,8 +4,8 @@ pub fn main() anyerror!void {
 
     const alloc = gpa.allocator();
 
-    const config = try Config.parse_argv(alloc);
-    // no deinit- lives as long as program.
+    try Config.init_global(alloc);
+    defer Config.deinit_global();
 
     const display = try wl.Display.connect(null);
     const registry = try display.getRegistry();
@@ -20,16 +20,23 @@ pub fn main() anyerror!void {
 
     //const shm = wayland_context.shm orelse return error.@"No Wayland Shared Memory";
 
-    //const compositor = wayland_context.compositor orelse return error.@"No Wayland Compositor";
+    const compositor = wayland_context.compositor orelse return error.@"No Wayland Compositor";
 
-    if (wayland_context.outputs.len == 0) return error.@"No Wayland Outputs";
+    const surface = try compositor.createSurface();
+    defer surface.destroy();
+
+    var surface_ctx = false;
+
+    surface.setListener(*bool, surfaceListener, &surface_ctx);
+
+    //if (wayland_context.outputs.len == 0) return error.@"No Wayland Outputs";
 
     //const wm_base = wayland_context.wm_base orelse return error.@"No Xdg Window Manager Base";
     //const layer_shell = wayland_context.layer_shell orelse return error.@"No WlRoots Layer Shell";
 
-    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+    //if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
-    const width: u31 = config.width orelse unreachable;
+    //const width: u31 = config.width orelse unreachable;
     //orelse wayland_context.outputs.width orelse width: {
     //    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed; // try an additional time
 
@@ -37,9 +44,9 @@ pub fn main() anyerror!void {
 
     //    return error.@"No screen size given by wayland";
     //};
-    const height: u31 = config.height;
+    //const height: u31 = config.height;
 
-    log.debug("width: {}, height: {}", .{ width, height });
+    //log.debug("width: {}, height: {}", .{ width, height });
 
     //const screen = try Screen.init(.{ .x = width, .y = height });
     //defer screen.deinit();
@@ -62,8 +69,7 @@ pub fn main() anyerror!void {
     //const buffer = try pool.createBuffer(0, width, height, stride, wl.Shm.Format.argb8888);
     //defer buffer.destroy();
 
-    //const surface = try compositor.createSurface();
-    //defer surface.destroy();
+    ////// ===== surface here
 
     //// TODO: Add output here
     //const layer_surface = try layer_shell.getLayerSurface(surface, null, zwlr.LayerShellV1.Layer.top, "elijah-immer/walrus-bar");
@@ -113,7 +119,7 @@ const WaylandContext = struct {
     layer_shell: ?*zwlr.LayerShellV1 = null,
     layer_shell_name: u32 = undefined,
 
-    pub const OutputsArray = SegmentedList(OutputContext, 4);
+    pub const OutputsArray = SegmentedList(OutputContext, 0);
 
     pub fn init(allocator: Allocator) Allocator.Error!@This() {
         return .{
@@ -151,13 +157,13 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
 
                 const output = registry.bind(global.name, wl.Output, 1) catch @panic("Failed to register output");
 
-                var outputs_iter = context.outputs.iterator(0);
-
                 const output_context = output_context: {
+                    var outputs_iter = context.outputs.iterator(0);
                     while (outputs_iter.next()) |output_space| {
                         if (!output_space.is_alive) break :output_context output_space;
                     }
 
+                    // if there is no available space, add a new one.
                     break :output_context context.outputs.addOne(context.allocator) catch @panic("OOM");
                 };
                 output_context.* = .{
@@ -184,20 +190,52 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
             //log_local.debug("unknown global added: '{s}'", .{global.interface});
         },
         .global_remove => |global| {
-            var outputs_iter = context.outputs.iterator(0);
-            while (outputs_iter.next()) |output_ctx| {
-                if (global.name == output_ctx.name) {
-                    output_ctx.* = undefined;
-                    output_ctx.is_alive = false;
-                    // don't release, it was done for us.
-                    return;
+            var was_removed = false;
+            var last_alive: usize = 0;
+            var idx: usize = 0;
+
+            if (context.outputs.len > 0) {
+                var outputs_iter = context.outputs.iterator(0);
+                while (outputs_iter.next()) |output_ctx| {
+                    std.debug.print("{} ", .{idx});
+                    if (output_ctx.is_alive) {
+                        if (global.name == output_ctx.name) {
+                            std.debug.print("\n", .{});
+                            log_local.info("Output {} at idx {} was removed", .{ output_ctx.name, idx });
+                            assert(!was_removed); // two outputs with the same name?
+
+                            output_ctx.* = undefined;
+                            output_ctx.is_alive = false;
+                            // don't release, it was done for us.
+                            was_removed = true;
+                            idx += 1;
+                            continue;
+                        }
+                        last_alive = idx;
+                    }
+                    idx += 1;
                 }
+                std.debug.print("\n", .{});
             }
+
+            if (was_removed) {
+                var outputs_iter = context.outputs.iterator(last_alive + 1);
+                while (outputs_iter.next()) |output_ctx| {
+                    assert(!output_ctx.is_alive);
+                }
+
+                context.outputs.shrinkCapacity(context.allocator, last_alive + 1);
+                context.outputs.shrink(last_alive + 1);
+
+                return;
+            }
+
             inline for (listen_for) |variable| {
                 _, const field = variable;
 
                 if (@field(context, field) != null) {
                     if (global.name == @field(context, field ++ "_name")) {
+                        log_local.info("Resource '{s}' was removed", .{field});
                         @field(context, field ++ "_name") = undefined;
                         @field(context, field) = null;
 
@@ -206,6 +244,15 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
                 }
             }
         },
+    }
+}
+
+pub const SurfaceContext = *bool;
+fn surfaceListener(surface: *wl.Surface, event: wl.Surface.Event, ctx: SurfaceContext) void {
+    _ = surface;
+    _ = ctx;
+    switch (event) {
+        .enter, .leave => {},
     }
 }
 
@@ -218,8 +265,10 @@ fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSu
 
 pub const OutputContext = struct {
     is_alive: bool = true,
+
     output: *wl.Output,
     name: u32,
+
     width: ?u16 = null,
     height: ?u16 = null,
     physical_width: ?u16 = null,
@@ -248,7 +297,15 @@ fn outputListener(output: *wl.Output, event: wl.Output.Event, ctx: *OutputContex
             log_local.debug("{} :: output is done", .{ctx.name});
             ctx.is_done = true;
         },
-        .scale, .name, .description => {},
+        .scale => |scale| {
+            log_local.debug("{} :: scale: {}", .{ ctx.name, scale });
+        },
+        .name => |name| {
+            log_local.debug("{} :: name: '{}'", .{ ctx.name, name });
+        },
+        .description => |description| {
+            log_local.debug("{} :: description: '{}'", .{ ctx.name, description });
+        },
     }
 }
 
@@ -256,13 +313,14 @@ test {
     std.testing.refAllDecls(colors);
     std.testing.refAllDecls(drawing);
     std.testing.refAllDecls(DrawingContext);
-    std.testing.refAllDecls(@import("config.zig"));
+    std.testing.refAllDecls(@import("Config.zig"));
     std.testing.refAllDecls(@import("wayland")); // make sure the wayland binds work
 }
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
-const Config = @import("config.zig").Config;
+const Config = @import("Config.zig");
+const config = Config.config;
 
 const drawing = @import("drawing.zig");
 const DrawingContext = @import("DrawingContext.zig");

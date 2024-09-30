@@ -15,7 +15,6 @@ pub const Internal = struct {
 pub const InitArgs = struct {
     parent_allocator: Allocator,
     output_context: *const OutputContext,
-    config: *const Config,
     screen: *const Screen,
 };
 
@@ -101,7 +100,7 @@ pub fn init(args: InitArgs) Allocator.Error!*DrawingContext {
 
         const err = freetype.FT_Set_Char_Size(
             ctx.font_face,
-            @intCast(args.config.font_size << 6), // multiply by 64 because they measure it in 1/64 points
+            @intCast(config.font_size << 6), // multiply by 64 because they measure it in 1/64 points
             0,
             @intCast(horz_dpi),
             @intCast(vert_dpi),
@@ -133,7 +132,7 @@ pub fn deinit(self: *DrawingContext) void {
 }
 
 const OutputContext = @import("main.zig").OutputContext;
-const Config = @import("config.zig").Config;
+const config = &@import("Config.zig").config;
 
 const drawing = @import("drawing.zig");
 const Screen = drawing.Screen;
