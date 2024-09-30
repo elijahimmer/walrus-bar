@@ -1,0 +1,27 @@
+.{
+    .name = "walrus-bar",
+    .version = "0.0.1",
+    .dependencies = .{
+        .clap = .{
+            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.9.1.tar.gz",
+            .hash = "122062d301a203d003547b414237229b09a7980095061697349f8bef41be9c30266b",
+        },
+        .@"zig-wayland" = .{
+            .url = "https://codeberg.org/ifreund/zig-wayland/archive/v0.2.0.tar.gz",
+            .hash = "1220687c8c47a48ba285d26a05600f8700d37fc637e223ced3aa8324f3650bf52242",
+        },
+        .freetype = .{
+            .url = "https://github.com/hexops/freetype/archive/refs/heads/master.tar.gz",
+            .hash = "1220babb7939707ca390b934657dfd3c8c3a6a78cc9442e4cbd43e3f9ffd49daec9e",
+        },
+    },
+    .paths = .{
+        "src",
+        "protocols",
+        "fonts",
+
+        "build.zig",
+        "build.zig.zon",
+        "LICENSE",
+    },
+}
