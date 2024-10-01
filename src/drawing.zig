@@ -38,6 +38,9 @@ pub const Screen = struct {
         const width, const height = .{ size.x, size.y };
         const stride: u31 = @as(u31, width) * @sizeOf(Color);
 
+        assert(width > 0);
+        assert(height > 0);
+
         const fd = try posix.memfd_create("walrus-bar", 0);
         try posix.ftruncate(fd, stride * height);
         const screen = try posix.mmap(

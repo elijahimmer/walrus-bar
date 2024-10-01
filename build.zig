@@ -48,13 +48,13 @@ pub fn build(b: *std.Build) void {
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
 
-    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml");
+    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml"); // needed by wlr-layer-shell
     scanner.addSystemProtocol("wlr/unstable/wlr-layer-shell-unstable-v1.xml");
 
-    scanner.generate("wl_compositor", 2);
-    scanner.generate("wl_shm", 2);
+    scanner.generate("wl_compositor", 6);
+    scanner.generate("wl_shm", 1);
     scanner.generate("wl_output", 4);
-    scanner.generate("xdg_wm_base", 2);
+    //scanner.generate("xdg_wm_base", 2);
     scanner.generate("zwlr_layer_shell_v1", 4);
 
     // TODO: remove when https://github.com/ziglang/zig/issues/131 is implemented

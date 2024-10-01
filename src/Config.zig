@@ -7,12 +7,7 @@ pub fn init_global(allocator: Allocator) Allocator.Error!void {
     config = try parse_argv(allocator);
 }
 
-pub fn deinit_global() void {
-    config.deinit();
-}
-
 // general things
-arena: ArenaAllocator,
 program_name: []const u8,
 
 // params
@@ -25,27 +20,24 @@ background_color: Color,
 
 font_size: u16,
 
-pub fn deinit(self: *const Config) void {
-    self.arena.deinit();
-}
-
 pub fn parse_argv(allocator: Allocator) Allocator.Error!Config {
-    var arena = ArenaAllocator.init(allocator);
-    const alloc = arena.allocator();
-
-    var iter = try std.process.ArgIterator.initWithAllocator(alloc);
+    var iter = try std.process.ArgIterator.initWithAllocator(allocator);
     defer iter.deinit();
 
-    const program_name = iter.next() orelse "walrus-bar";
+    const program_name = if (std.os.argv.len > 0)
+        std.mem.span(std.os.argv[0])
+    else
+        "walrus-bar";
 
     var diag = clap.Diagnostic{};
     const res = clap.parse(clap.Help, &params, parsers, .{
         .diagnostic = &diag,
-        .allocator = alloc,
+        .allocator = allocator,
     }) catch |err| {
         diag.report(std.io.getStdErr().writer(), err) catch {};
         exit(1);
     };
+    defer res.deinit();
 
     const args = &res.args;
 
@@ -55,7 +47,6 @@ pub fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     }
 
     return Config{
-        .arena = arena,
         .program_name = program_name,
 
         .width = args.width,
@@ -97,6 +88,5 @@ const print = std.debug.print;
 const exit = std.process.exit;
 
 const Allocator = std.mem.Allocator;
-const ArenaAllocator = std.heap.ArenaAllocator;
 
 const clap = @import("clap");
