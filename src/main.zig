@@ -12,7 +12,7 @@ pub fn main() !void {
     //defer registry.destroy();
 
     wayland_context.* = try WaylandContext.init(alloc, display);
-    //defer wayland_context.deinit();
+    defer wayland_context.deinit();
 
     log.debug("Starting Registry", .{});
     registry.setListener(*WaylandContext, registryListener, wayland_context);
@@ -22,8 +22,6 @@ pub fn main() !void {
     const shm = wayland_context.shm orelse return error.@"No Wayland Shared Memory";
     shm.setListener(*bool, shmListener, &shm_has_argb8888);
 
-    //const compositor = wayland_context.compositor orelse return error.@"No Wayland Compositor";
-
     switch (display.roundtrip()) {
         .SUCCESS => {},
         .PROTO => return error.ProtocolError,
@@ -32,17 +30,26 @@ pub fn main() !void {
             return error.RoundtripFailed;
         },
     }
+
     assert(shm_has_argb8888); // supposed to according to Wayland protocol
     if (wayland_context.outputs.len == 0) return error.@"No Wayland Outputs";
 
     while (wayland_context.running) {
-        if (display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
+        if (display.roundtrip() != .SUCCESS) return error.DispatchFailed;
 
-        var outputs_iter = wayland_context.outputs.iterator(0);
+        var outputs_iter = wayland_context.outputs.constIterator(0);
         var output_idx: u16 = 0;
         while (outputs_iter.next()) |output| {
-            output_idx += 1;
+            defer output_idx += 1;
             if (!output.is_alive) continue;
+
+            const drawing_context = &wayland_context.drawing_contexts.items[output_idx];
+
+            if (!drawing_context.is_initalized) {
+                drawing_context.is_initalized = true;
+
+                drawing_context.* = try DrawingContext.init(output.output);
+            }
         }
     }
 }
@@ -126,7 +133,7 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *
             }
 
             if (was_removed) {
-                var outputs_iter = context.outputs.iterator(last_alive + 1);
+                var outputs_iter = context.outputs.constIterator(last_alive + 1);
                 while (outputs_iter.next()) |output_ctx| assert(!output_ctx.is_alive);
 
                 context.drawing_contexts.shrinkAndFree(context.allocator, last_alive + 1);
@@ -183,7 +190,7 @@ const drawing = @import("drawing.zig");
 const WaylandContext = @import("WaylandContext.zig");
 const wayland_context = &WaylandContext.global;
 
-//const DrawingContext = @import("DrawingContext.zig");
+const DrawingContext = @import("DrawingContext.zig");
 const OutputContext = @import("OutputContext.zig");
 const Screen = drawing.Screen;
 

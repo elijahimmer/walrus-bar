@@ -1,10 +1,6 @@
 pub const OutputContext = @This();
-pub const State = union(enum) {
-    configuring: packed struct {
-        has_name: bool = false,
-        has_mode: bool = false,
-        has_geometry: bool = false,
-    },
+pub const State = enum {
+    configuring,
     done,
     acked,
 };
@@ -13,13 +9,15 @@ output: *wl.Output,
 serial: u32,
 
 is_alive: bool = true,
-state: State = .{ .configuring = .{} },
+state: State = .configuring,
 
-name: ?[]u8 = undefined,
+name: ?[]u8 = null,
 
+has_mode: bool = false,
 width: u16 = undefined,
 height: u16 = undefined,
 
+has_geometry: bool = false,
 physical_width: u16 = undefined,
 physical_height: u16 = undefined,
 
@@ -46,11 +44,8 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, ctx: *OutputCo
                 @tagName(geometry.subpixel),
             });
 
-            if (ctx.state != .configuring) {
-                ctx.state = .{ .configuring = .{ .has_geometry = true } };
-            } else {
-                ctx.state.configuring.has_geometry = true;
-            }
+            ctx.state = .configuring;
+            ctx.has_geometry = true;
         },
         .mode => |mode| {
             ctx.width = @intCast(mode.width);
@@ -62,11 +57,8 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, ctx: *OutputCo
                 mode.refresh,
             });
 
-            if (ctx.state != .configuring) {
-                ctx.state = .{ .configuring = .{ .has_mode = true } };
-            } else {
-                ctx.state.configuring.has_mode = true;
-            }
+            ctx.state = .configuring;
+            ctx.has_mode = true;
         },
         .name => |name| {
             log.debug("{} :: name: '{s}'", .{ ctx.serial, name.name });
@@ -77,22 +69,17 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, ctx: *OutputCo
             ctx.name = wayland_context.allocator.alloc(u8, name_str.len) catch return;
             @memcpy(ctx.name.?, name_str);
 
-            if (ctx.state != .configuring) {
-                ctx.state = .{ .configuring = .{ .has_name = true } };
-            } else {
-                ctx.state.configuring.has_name = true;
-            }
+            ctx.state = .configuring;
         },
         // don't need description or scale (right now)
         .description, .scale => {},
         .done => {
             log.debug("{} :: output is done", .{ctx.serial});
 
+            assert(ctx.state == .configuring or ctx.state == .done);
+            assert(ctx.has_mode);
+            assert(ctx.has_geometry);
             assert(ctx.name != null);
-            assert(ctx.state == .configuring);
-            assert(ctx.state.configuring.has_mode);
-            assert(ctx.state.configuring.has_name);
-            assert(ctx.state.configuring.has_geometry);
             ctx.state = .done;
         },
     }

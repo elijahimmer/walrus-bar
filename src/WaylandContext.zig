@@ -2,7 +2,7 @@ pub const WaylandContext = @This();
 pub var global: WaylandContext = undefined;
 
 pub const OutputsArray = SegmentedList(OutputContext, 4);
-pub const DrawingContextsArray = MultiArrayList(DrawingContext);
+pub const DrawingContextsArray = ArrayListUnmanaged(DrawingContext);
 
 allocator: Allocator,
 running: bool = true,
@@ -51,4 +51,4 @@ const zwlr = wayland.client.zwlr;
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const SegmentedList = std.SegmentedList;
-const MultiArrayList = std.MultiArrayList;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
