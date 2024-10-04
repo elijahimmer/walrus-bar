@@ -1,9 +1,11 @@
 // ARGB is in reverse order for little endian (required by wayland spec)
-pub const Color = packed struct {
+pub const Color = packed struct(u32) {
     b: u8,
     g: u8,
     r: u8,
     a: u8,
+
+    pub const FORMAT: wl.Shm.Format = .argb8888;
 };
 
 /// turns a rgb int into a color
@@ -197,6 +199,9 @@ fn generate_color_list(obj: anytype) [@typeInfo(obj).Struct.decls.len]ColorListE
 
     return list;
 }
+
+const wayland = @import("wayland");
+const wl = wayland.client.wl;
 
 const std = @import("std");
 const assert = std.debug.assert;

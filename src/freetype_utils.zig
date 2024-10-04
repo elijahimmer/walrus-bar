@@ -1,9 +1,9 @@
 pub fn isErr(err: c_int) bool {
-    return err == 0;
+    return err != 0;
 }
 
 pub fn errorAssert(err: c_int, comptime message: []const u8, args: anytype) void {
-    if (isErr(err)) return;
+    if (!isErr(err)) return;
 
     const err_desc = freetype.FT_Error_String(err);
     if (err_desc == null) std.debug.panic("{s}. Unknown FreeType Error", .{message});
@@ -12,10 +12,9 @@ pub fn errorAssert(err: c_int, comptime message: []const u8, args: anytype) void
 }
 
 pub fn errorPrint(err: c_int, comptime message: []const u8, args: anytype) void {
-    if (isErr(err)) return;
-    const err_desc = if (freetype.FT_Error_String(err)) |err_str| err_desc: {
-        break :err_desc std.mem.span(err_str);
-    } else "Unknown FreeType Error";
+    if (!isErr(err)) return;
+
+    const err_desc = if (freetype.FT_Error_String(err)) |err_str| std.mem.span(err_str) else "Unknown FreeType Error";
 
     log.err(message ++ ": {s}", args ++ .{err_desc});
 }
@@ -34,12 +33,12 @@ pub const AllocUser = struct {
     }
 };
 
-pub fn alloc(memory: FT_Memory, _size: c_long) callconv(.C) ?*anyopaque {
-    assert(_size > 0);
+pub fn alloc(memory: FT_Memory, size_long: c_long) callconv(.C) ?*anyopaque {
+    assert(size_long > 0);
     assert(memory != null);
     assert(memory.*.user != null);
 
-    const size: usize = @intCast(_size);
+    const size: usize = @intCast(size_long);
 
     const user = @as(*AllocUser, @alignCast(@ptrCast(memory.*.user)));
 
@@ -69,15 +68,15 @@ pub fn free(memory: FT_Memory, ptr: ?*anyopaque) callconv(.C) void {
     _ = user.alloc_list.swapRemove(idx);
 }
 
-pub fn realloc(memory: FT_Memory, _cur_size: c_long, _new_size: c_long, ptr: ?*anyopaque) callconv(.C) ?*anyopaque {
+pub fn realloc(memory: FT_Memory, cur_size_long: c_long, new_size_long: c_long, ptr: ?*anyopaque) callconv(.C) ?*anyopaque {
     assert(ptr != null);
-    assert(_cur_size > 0);
-    assert(_new_size > 0);
+    assert(cur_size_long > 0);
+    assert(new_size_long > 0);
     assert(memory != null);
     assert(memory.*.user != null);
 
-    const cur_size: usize = @intCast(_cur_size);
-    const new_size: usize = @intCast(_new_size);
+    const cur_size: usize = @intCast(cur_size_long);
+    const new_size: usize = @intCast(new_size_long);
 
     if (cur_size == new_size) return ptr;
 
