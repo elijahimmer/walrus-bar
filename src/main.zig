@@ -1,6 +1,5 @@
 pub const WAYLAND_NAMESPACE: [:0]const u8 = "elijahimmer/walrus-bar";
 pub const WAYLAND_LAYER: zwlr.LayerShellV1.Layer = .bottom;
-pub const WAYLAND_ZWLR_EXCLUSIZE_ZONE: u8 = 1;
 pub const WAYLAND_ZWLR_ANCHOR: zwlr.LayerSurfaceV1.Anchor = .{
     .top = true,
     .bottom = false,
@@ -12,6 +11,8 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
+
+    try Config.init_global(allocator);
 
     const display = try wl.Display.connect(null);
     var registry = try display.getRegistry();
@@ -70,17 +71,24 @@ pub const DrawContext = struct {
 
     surface: ?*wl.Surface = null,
     layer_surface: ?*zwlr.LayerSurfaceV1 = null,
+    //// Do I really need to reuse the pool? 1 buffer should be enough.
     //shm_pool: ?*wl.ShmPool = null,
     shm_buffer: ?*wl.Buffer = null,
     shm_fd: ?posix.fd_t = null,
+    frame_callback: ?*wl.Callback = null,
 
     screen: []Color = undefined,
+
+    window_width: u31 = 0,
+    window_height: u31 = 0,
 
     has_started: bool = false,
 
     pub fn deinit(self: *DrawContext, allocator: Allocator) void {
+        if (self.shm_buffer) |shm_buffer| shm_buffer.destroy();
         if (self.shm_fd) |shm_fd| posix.close(shm_fd);
         if (self.surface) |surface| surface.destroy();
+        if (self.frame_callback) |frame_callback| frame_callback.destroy();
 
         //if (self.shm_pool) |shm_pool| shm_pool.destroy();
         if (self.layer_surface) |layer_surface| layer_surface.destroy();
@@ -93,15 +101,16 @@ pub const DrawContext = struct {
     const InitializeShmError = posix.MMapError || posix.MemFdCreateError || posix.TruncateError;
     fn initializeShm(self: *DrawContext, wayland_context: *WaylandContext) InitializeShmError!void {
         assert(wayland_context.shm != null);
-        assert(self.output_context.width > 28);
-        assert(self.output_context.height > 0);
+        assert(self.output_context.width >= self.window_width);
+        assert(self.output_context.height >= self.window_height);
         assert(self.surface != null);
 
-        const width = 28; // TODO: replace with config height
-        const height = self.output_context.height;
+        const width = self.output_context.width;
+        const height = config.height;
+        const stride = @as(u31, width) * @sizeOf(Color);
 
-        const size: u31 = @sizeOf(Color) * @as(u31, width) * @as(u31, height);
-        const fd = try posix.memfd_create(WAYLAND_NAMESPACE, 0);
+        const size: u31 = stride * @as(u31, height);
+        const fd = try posix.memfd_createZ(WAYLAND_NAMESPACE, 0);
         self.shm_fd = fd;
         try posix.ftruncate(fd, size);
         const screen = try posix.mmap(
@@ -113,54 +122,59 @@ pub const DrawContext = struct {
             0,
         );
 
-        const shm_pool = try wayland_context.shm.?.createPool(fd, size);
-        defer shm_pool.destroy();
-
-        if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
-
-        self.shm_buffer = try shm_pool.createBuffer(0, width, height, size, Color.FORMAT);
-
         var screen_adjusted: []Color = undefined;
         screen_adjusted.ptr = @ptrCast(screen.ptr);
         screen_adjusted.len = @as(usize, height) * width;
 
         self.screen = screen_adjusted;
 
-        @memset(screen_adjusted, all_colors.rose);
+        @memset(screen_adjusted, all_colors.surface);
+
+        const shm_pool = try wayland_context.shm.?.createPool(fd, size);
+        defer shm_pool.destroy();
+
+        self.shm_buffer = try shm_pool.createBuffer(0, width, height, stride, Color.FORMAT);
     }
 
     pub const OutputChangedError = InitializeShmError || error{OutOfMemory};
     pub fn outputChanged(self: *DrawContext, wayland_context: *WaylandContext) OutputChangedError!void {
-        //assert(self.output_context.width > 0);
+        assert(self.output_context.width > 0);
         assert(self.output_context.height > 0);
         assert(wayland_context.layer_shell != null);
         assert(wayland_context.compositor != null);
         assert(wayland_context.shm != null);
+
+        std.log.scoped(.Output).debug("width: {}, height: {}", .{ self.output_context.width, self.output_context.height });
 
         if (!self.has_started) {
             if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
 
             self.surface = try wayland_context.compositor.?.createSurface();
 
-            self.surface.?.commit();
-            if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
+            self.surface.?.setListener(*WaylandContext, surfaceListener, wayland_context);
 
-            self.layer_surface = try wayland_context.layer_shell.?.getLayerSurface(
+            const layer_surface = try wayland_context.layer_shell.?.getLayerSurface(
                 self.surface.?,
                 self.output_context.output,
                 WAYLAND_LAYER,
                 WAYLAND_NAMESPACE,
             );
+            self.layer_surface = layer_surface;
 
-            self.layer_surface.?.setSize(28, self.output_context.height);
-            self.layer_surface.?.setAnchor(WAYLAND_ZWLR_ANCHOR);
-            self.layer_surface.?.setExclusiveZone(WAYLAND_ZWLR_EXCLUSIZE_ZONE);
+            layer_surface.setSize(0, config.height);
+            layer_surface.setAnchor(WAYLAND_ZWLR_ANCHOR);
+            layer_surface.setExclusiveZone(config.height);
+            layer_surface.setKeyboardInteractivity(zwlr.LayerSurfaceV1.KeyboardInteractivity.none);
+
+            layer_surface.setListener(*WaylandContext, layerSurfaceListener, wayland_context);
 
             self.surface.?.commit();
             if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
 
             try self.initializeShm(wayland_context);
             self.has_started = true;
+        } else {
+            @panic("resizing output unimplemented");
         }
 
         assert(self.layer_surface != null);
@@ -168,17 +182,121 @@ pub const DrawContext = struct {
         //assert(self.shm_pool != null);
         assert(self.shm_fd != null);
 
-        //self.surface.commit();
-        //if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
-
-        //const layer_surface = self.layer_surface.?;
-
-        if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
-
         self.surface.?.attach(self.shm_buffer.?, 0, 0);
+        self.surface.?.commit();
         if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
+
+        self.frame_callback = self.surface.?.frame() catch @panic("Getting Frame Callback Failed.");
+        self.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
     }
 };
+
+pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_context: *WaylandContext) void {
+    //const log_local = std.log.scoped(.nextFrame);
+
+    // make sure no other events can happen.
+    switch (event) {
+        .done => {},
+    }
+
+    const output_idx = output_idx: {
+        var output_idx: ?u32 = null;
+        for (wayland_context.outputs.slice(), 0..) |draw_context, idx| {
+            if (draw_context.frame_callback == callback) {
+                if (output_idx != null) @panic("Duplicate Layer Surfaces?");
+                output_idx = @intCast(idx);
+            }
+        }
+
+        if (output_idx) |idx| break :output_idx idx;
+
+        // if the surface is not found, then it is a stale frame request.
+        return;
+    };
+
+    const drawing_context = &wayland_context.outputs.slice()[output_idx];
+
+    // TODO: draw frame here.
+
+    // TODO: Change damage to what is drawn.
+    drawing_context.surface.?.damageBuffer(0, 0, drawing_context.window_width, drawing_context.window_height);
+
+    drawing_context.surface.?.attach(drawing_context.shm_buffer.?, 0, 0);
+    drawing_context.surface.?.commit();
+
+    drawing_context.frame_callback = drawing_context.surface.?.frame() catch @panic("Getting Frame Callback Failed.");
+    drawing_context.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
+}
+
+pub fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, wayland_context: *WaylandContext) void {
+    const log_local = std.log.scoped(.LayerSurface);
+
+    const output_idx = output_idx: {
+        var output_idx: ?u32 = null;
+        for (wayland_context.outputs.slice(), 0..) |draw_context, idx| {
+            if (draw_context.layer_surface == layer_surface) {
+                if (output_idx != null) @panic("Duplicate Layer Surfaces?");
+                output_idx = @intCast(idx);
+            }
+        }
+
+        if (output_idx) |idx| break :output_idx idx;
+
+        @panic("Layer Surface for event not found.");
+    };
+
+    const drawing_context = &wayland_context.outputs.slice()[output_idx];
+
+    switch (event) {
+        .configure => |configure| {
+            log_local.debug("Output: '{s}', Layer Shell was configured. width: {}, height: {}", .{
+                drawing_context.output_context.name,
+                configure.width,
+                configure.height,
+            });
+            drawing_context.window_width = @intCast(configure.width);
+            drawing_context.window_height = @intCast(configure.height);
+
+            layer_surface.ackConfigure(configure.serial);
+        },
+        .closed => {
+            log_local.debug("Output: '{s}', Surface done", .{drawing_context.output_context.name});
+            //@panic("layer surface closed unimplemented");
+        },
+    }
+}
+
+pub fn surfaceListener(surface: *wl.Surface, event: wl.Surface.Event, wayland_context: *WaylandContext) void {
+    _ = surface;
+    _ = wayland_context;
+    //const log_local = std.log.scoped(.LayerSurface);
+
+    //const output_idx = output_idx: {
+    //    var output_idx: ?u32 = null;
+    //    for (wayland_context.outputs.slice(), 0..) |draw_context, idx| {
+    //        if (draw_context.surface == surface) {
+    //            if (output_idx != null) @panic("Duplicate Surfaces?");
+    //            output_idx = @intCast(idx);
+    //        }
+    //    }
+
+    //    if (output_idx) |idx| break :output_idx idx;
+
+    //    @panic("Surface for event not found.");
+    //};
+
+    //const drawing_context = &wayland_context.outputs.slice()[output_idx];
+
+    switch (event) {
+        .enter, .leave, .preferred_buffer_scale, .preferred_buffer_transform => {}, // says which surface the window is on. I'd hope it's on the same one.
+        //.preferred_buffer_scale => |scale| {
+        //    log_local.debug("Output: '{s}', preferred_buffer_scale: {}", .{ drawing_context.output_context.name, scale.factor });
+        //},
+        //.preferred_buffer_transform => |transform| {
+        //    log_local.debug("Output: '{s}', preferred_buffer_transform: {}", .{ drawing_context.output_context.name, transform.transform });
+        //},
+    }
+}
 
 /// The names are only valid when the ptr assosiated is not null.
 pub const WaylandContext = struct {
@@ -384,7 +502,7 @@ const colors = @import("colors.zig");
 const Color = colors.Color;
 const all_colors = colors.all_colors;
 const Config = @import("Config.zig");
-const config = Config.config;
+const config = &Config.config;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
