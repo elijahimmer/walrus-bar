@@ -1,0 +1,154 @@
+//! This holds the entire context of the Wayland connection
+//! The names are only valid when the ptr assosiated is not null.
+
+pub const WaylandContext = @This();
+pub const MAX_OUTPUT_COUNT: usize = 16;
+display: *wl.Display,
+registry: *wl.Registry,
+allocator: Allocator,
+
+outputs: BoundedArray(DrawContext, MAX_OUTPUT_COUNT) = .{},
+
+compositor: ?*wl.Compositor = null,
+compositor_name: u32 = undefined,
+
+shm: ?*wl.Shm = null,
+shm_name: u32 = undefined,
+
+layer_shell: ?*zwlr.LayerShellV1 = null,
+layer_shell_name: u32 = undefined,
+
+seat: ?*wl.Seat = null,
+seat_name: u32 = undefined,
+
+pointer: ?*wl.Pointer = null,
+
+running: bool = true,
+
+pub fn deinit(self: *WaylandContext) void {
+    // destroy pointers first so it is less likely that a event will happen after the output was removed.
+    if (self.pointer) |pointer| pointer.release();
+    if (self.seat) |seat| seat.release();
+
+    for (self.outputs.slice()) |*output| output.deinit(self.allocator);
+
+    if (self.shm) |shm| shm.destroy();
+    if (self.layer_shell) |layer_shell| layer_shell.destroy();
+    if (self.compositor) |compositor| compositor.destroy();
+
+    self.* = undefined;
+}
+
+/// Runs the checker on all outputs in the outputs field of a WaylandContext.
+/// Used to identify a output by a pointer to a object it contains.
+/// This panics if the checker returns true on two or more outputs, so the identifier
+/// should be output unique
+pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*DrawContext, T) bool) ?u32 {
+    var output_idx: ?u32 = null;
+
+    for (self.outputs.slice(), 0..) |*output, index| {
+        if (checker(output, target)) {
+            if (output_idx != null) @panic("Two Outputs with the same " ++ @typeName(T) ++ " found!");
+            output_idx = @intCast(index);
+        }
+    }
+
+    return output_idx;
+}
+
+pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *WaylandContext) void {
+    const log_local = std.log.scoped(.Registry);
+
+    const listen_for = .{
+        .{ wl.Compositor, "compositor" },
+        .{ wl.Shm, "shm" },
+        .{ zwlr.LayerShellV1, "layer_shell" },
+        .{ wl.Seat, "seat" },
+    };
+
+    switch (event) {
+        .global => |global| {
+            if (mem.orderZ(u8, global.interface, wl.Output.getInterface().name) == .eq) {
+                log_local.debug("Output Added with id #{}", .{global.name});
+
+                const output = registry.bind(global.name, wl.Output, wl.Output.generated_version) catch return;
+                output.setListener(*WaylandContext, DrawContext.outputListener, context);
+
+                context.outputs.append(.{
+                    .output_context = .{
+                        .output = output,
+                        .id = global.name,
+                    },
+                }) catch @panic("Too many outputs!");
+
+                return;
+            }
+
+            inline for (listen_for) |variable| {
+                const resource, const field = variable;
+
+                if (mem.orderZ(u8, global.interface, resource.getInterface().name) == .eq) {
+                    log_local.debug("global added: '{s}'", .{global.interface});
+                    @field(context, field) = registry.bind(global.name, resource, resource.generated_version) catch return;
+                    @field(context, field ++ "_name") = global.name;
+
+                    return;
+                }
+            }
+
+            log_local.debug("unknown global ignored: '{s}'", .{global.interface});
+        },
+        .global_remove => |global| {
+            for (context.outputs.slice(), 0..) |*draw_context, idx| {
+                const output_context = &draw_context.output_context;
+                if (output_context.id == global.name) {
+                    log_local.debug("Output '{s}' was removed", .{output_context.name});
+                    draw_context.deinit(context.allocator);
+
+                    _ = context.outputs.swapRemove(idx);
+
+                    return;
+                }
+            }
+
+            inline for (listen_for) |variable| {
+                _, const field = variable;
+
+                if (@field(context, field) != null) {
+                    if (global.name == @field(context, field ++ "_name")) {
+                        @panic("Resource '" ++ field ++ "' was removed, this is unimplemented.");
+                    }
+                }
+            }
+        },
+    }
+}
+
+pub fn shmListener(shm: *wl.Shm, event: wl.Shm.Event, has_argb8888: *bool) void {
+    _ = shm;
+    switch (event) {
+        .format => |format| {
+            if (format.format == .argb8888) {
+                has_argb8888.* = true;
+            }
+        },
+    }
+}
+
+const DrawContext = @import("DrawContext.zig");
+
+const Color = @import("colors.zig").Color;
+const all_colors = @import("colors.zig").all_colors;
+
+const wayland = @import("wayland");
+const wl = wayland.client.wl;
+const zwlr = wayland.client.zwlr;
+
+const std = @import("std");
+const mem = std.mem;
+
+const BoundedArray = std.BoundedArray;
+const Allocator = std.mem.Allocator;
+
+const assert = std.debug.assert;
+const log = std.log.scoped(.WaylandContext);

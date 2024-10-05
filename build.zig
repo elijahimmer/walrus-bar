@@ -52,15 +52,16 @@ pub fn build(b: *std.Build) void {
     scanner.addSystemProtocol("wlr/unstable/wlr-layer-shell-unstable-v1.xml");
 
     scanner.generate("wl_compositor", 6);
+    scanner.generate("wl_seat", 9);
     scanner.generate("wl_shm", 1);
     scanner.generate("wl_output", 4);
     //scanner.generate("xdg_wm_base", 2);
     scanner.generate("zwlr_layer_shell_v1", 4);
 
-    // TODO: remove when https://github.com/ziglang/zig/issues/131 is implemented
-    scanner.addCSource(exe);
+    inline for (.{ exe, exe_unit_tests }) |l| {
+        // TODO: remove when https://github.com/ziglang/zig/issues/131 is implemented
+        scanner.addCSource(l);
 
-    for ([_]*std.Build.Step.Compile{ exe, exe_unit_tests }) |l| {
         l.step.dependOn(&options.step);
         l.root_module.addOptions("options", options);
 

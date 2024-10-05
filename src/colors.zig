@@ -160,22 +160,22 @@ test composite {
 pub const all_colors = struct {
     // TODO: Add more colors here.
     pub const clear: Color = @bitCast(@as(u32, 0));
-    pub const white: Color = @bitCast(~@as(u32, 0));
+    pub const white: Color = @bitCast(@as(u32, 0xFF_FF_FF_FF));
     pub const black: Color = @bitCast(@as(u32, 0xFF_00_00_00));
-    pub const main: Color = rgb2Color(0x191724);
-    pub const surface: Color = rgb2Color(0x1f1d2e);
-    pub const overlay: Color = rgb2Color(0x26233a);
-    pub const muted: Color = rgb2Color(0x908caa);
-    pub const text: Color = rgb2Color(0xe0def4);
-    pub const love: Color = rgb2Color(0xeb6f92);
-    pub const gold: Color = rgb2Color(0xf6c177);
-    pub const rose: Color = rgb2Color(0xebbcba);
-    pub const pine: Color = rgb2Color(0x31748f);
-    pub const foam: Color = rgb2Color(0x9ccfd8);
-    pub const iris: Color = rgb2Color(0xc4a7e7);
-    pub const hl_low: Color = rgb2Color(0x21202e);
-    pub const hl_med: Color = rgb2Color(0x403d52);
-    pub const hl_high: Color = rgb2Color(0x524f67);
+    pub const main: Color = @bitCast(@as(u32, 0xFF191724));
+    pub const surface: Color = @bitCast(@as(u32, 0xFF1f1d2e));
+    pub const overlay: Color = @bitCast(@as(u32, 0xFF26233a));
+    pub const muted: Color = @bitCast(@as(u32, 0xFF908caa));
+    pub const text: Color = @bitCast(@as(u32, 0xFFe0def4));
+    pub const love: Color = @bitCast(@as(u32, 0xFFeb6f92));
+    pub const gold: Color = @bitCast(@as(u32, 0xFFf6c177));
+    pub const rose: Color = @bitCast(@as(u32, 0xFFebbcba));
+    pub const pine: Color = @bitCast(@as(u32, 0xFF31748f));
+    pub const foam: Color = @bitCast(@as(u32, 0xFF9ccfd8));
+    pub const iris: Color = @bitCast(@as(u32, 0xFFc4a7e7));
+    pub const hl_low: Color = @bitCast(@as(u32, 0xFF21202e));
+    pub const hl_med: Color = @bitCast(@as(u32, 0xFF403d52));
+    pub const hl_high: Color = @bitCast(@as(u32, 0xFF524f67));
 };
 pub usingnamespace all_colors;
 
