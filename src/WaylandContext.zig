@@ -63,7 +63,6 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
         .{ wl.Compositor, "compositor" },
         .{ wl.Shm, "shm" },
         .{ zwlr.LayerShellV1, "layer_shell" },
-        .{ wl.Seat, "seat" },
     };
 
     switch (event) {
@@ -79,7 +78,36 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                         .output = output,
                         .id = global.name,
                     },
+
+                    .widget_left = drawing.newTextWidget(.{
+                        .allocator = context.allocator,
+
+                        .area = .{
+                            .x = 0,
+                            .y = 0,
+                            .width = 500,
+                            .height = config.height,
+                        },
+
+                        .text = "Test",
+
+                        .text_color = colors.rose,
+                        .outline_color = colors.pine,
+                        .background_color = colors.surface,
+                    }) catch @panic("OOM"),
                 }) catch @panic("Too many outputs!");
+
+                return;
+            }
+
+            if (mem.orderZ(u8, global.interface, wl.Seat.getInterface().name) == .eq) {
+                log_local.debug("Seat added with id #{}", .{global.name});
+                assert(context.seat == null);
+                const seat = registry.bind(global.name, wl.Seat, wl.Seat.generated_version) catch @panic("Failed to bind resource");
+                context.seat = seat;
+                context.seat_name = global.name;
+
+                seat.setListener(*WaylandContext, seat_utils.seatListener, context);
 
                 return;
             }
@@ -89,7 +117,8 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
 
                 if (mem.orderZ(u8, global.interface, resource.getInterface().name) == .eq) {
                     log_local.debug("global added: '{s}'", .{global.interface});
-                    @field(context, field) = registry.bind(global.name, resource, resource.generated_version) catch return;
+                    assert(@field(context, field) == null);
+                    @field(context, field) = registry.bind(global.name, resource, resource.generated_version) catch @panic("Failed to bind resource");
                     @field(context, field ++ "_name") = global.name;
 
                     return;
@@ -136,9 +165,13 @@ pub fn shmListener(shm: *wl.Shm, event: wl.Shm.Event, has_argb8888: *bool) void 
 }
 
 const DrawContext = @import("DrawContext.zig");
+const seat_utils = @import("seat_utils.zig");
+const drawing = @import("drawing.zig");
 
-const Color = @import("colors.zig").Color;
-const all_colors = @import("colors.zig").all_colors;
+const colors = @import("colors.zig");
+const Color = colors.Color;
+
+const config = &@import("Config.zig").global;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;

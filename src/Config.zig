@@ -1,12 +1,20 @@
 pub const Config = @This();
 
 /// global config. Use only after you have initialized it with init
-pub var config: Config = undefined;
+pub var global: Config = undefined;
 
+/// Reads and initializes the config from CLI args.
+/// May not return if bad args or help is passed.
 pub fn init_global(allocator: Allocator) Allocator.Error!void {
-    config = try parse_argv(allocator);
+    global = try parse_argv(allocator);
 }
 
+pub fn deinit_global() void {
+    global.clap_res.deinit();
+    global = undefined;
+}
+
+clap_res: clap.Result(clap.Help, &params, parsers),
 // general things
 program_name: []const u8,
 
@@ -20,8 +28,8 @@ background_color: Color,
 
 font_size: u16,
 
-pub fn parse_argv(allocator: Allocator) Allocator.Error!Config {
-    var iter = try std.process.ArgIterator.initWithAllocator(allocator);
+fn parse_argv(allocator: Allocator) Allocator.Error!Config {
+    var iter = std.process.ArgIterator.init();
     defer iter.deinit();
 
     const program_name = if (std.os.argv.len > 0)
@@ -34,10 +42,10 @@ pub fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .diagnostic = &diag,
         .allocator = allocator,
     }) catch |err| {
+        if (err == error.OutOfMemory) return error.OutOfMemory;
         diag.report(std.io.getStdErr().writer(), err) catch {};
         exit(1);
     };
-    defer res.deinit();
 
     const args = &res.args;
 
@@ -47,6 +55,7 @@ pub fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     }
 
     return Config{
+        .clap_res = res,
         .program_name = program_name,
 
         .width = args.width,

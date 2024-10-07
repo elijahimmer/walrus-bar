@@ -1,5 +1,5 @@
-pub const FreetypeContext = @This();
-pub var global: FreetypeContext = undefined;
+pub const FreeTypeContext = @This();
+pub var global: FreeTypeContext = undefined;
 
 freetype_lib: freetype.FT_Library,
 font_face: freetype.FT_Face,
@@ -12,7 +12,7 @@ pub const Internal = struct {
     alloc_user: freetype_utils.AllocUser,
 };
 
-pub fn init_global(parent_allocator: Allocator, output_context: *const OutputContext) Allocator.Error!void {
+pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
     global.internal.parent_allocator = parent_allocator;
 
     const alloc = alloc: {
@@ -31,10 +31,6 @@ pub fn init_global(parent_allocator: Allocator, output_context: *const OutputCon
         .free = freetype_utils.free,
         .realloc = freetype_utils.realloc,
     };
-
-    // // standard setup without a custom allocator
-    //var err = freetype.FT_Init_FreeType(&global.freetype_lib);
-    //errdefer freetype.FT_Done_FreeType(&global.freetype_lib);
 
     {
         const err = freetype.FT_New_Library(&global.internal.freetype_allocator, &global.freetype_lib);
@@ -67,60 +63,74 @@ pub fn init_global(parent_allocator: Allocator, output_context: *const OutputCon
         const err = freetype.FT_Select_Charmap(global.font_face, freetype.FT_ENCODING_UNICODE);
         freetype_utils.errorAssert(err, "Failed to set charmap to unicode", .{});
     }
-
-    { // set font size
-        // screen size in milimeters
-        const physical_height = output_context.display_physical_height;
-        const physical_width = output_context.display_physical_width;
-
-        // screen pixel size
-        const height = output_context.display_height;
-        const width = output_context.display_width;
-
-        // mm to inches, (mm * 5) / 127
-        const horz_dpi = if (physical_height != null and height != null and height.? > 0)
-            (@as(u64, @intCast(height.?)) * 127) / (@as(u64, @intCast(physical_height.?)) * 5)
-        else
-            0;
-
-        const vert_dpi = if (physical_width != null and width != null and width.? > 0)
-            (@as(u64, @intCast(width.?)) * 127) / (@as(u64, @intCast(physical_width.?)) * 5)
-        else
-            0;
-
-        const err = freetype.FT_Set_Char_Size(
-            global.font_face,
-            @intCast(config.font_size << 6), // multiply by 64 because they measure it in 1/64 points
-            0,
-            @intCast(horz_dpi),
-            @intCast(vert_dpi),
-        );
-        freetype_utils.errorAssert(err, "Failed to set font size", .{});
-    }
 }
 
-pub fn deinit(self: *FreetypeContext) void {
+pub fn deinit_global() void {
     {
-        const err = freetype.FT_Done_Face(self.font_face);
+        const err = freetype.FT_Done_Face(global.font_face);
         freetype_utils.errorPrint(err, "Failed to free FreeType Font", .{});
     }
     {
-        const err = freetype.FT_Done_Library(self.freetype_lib);
+        const err = freetype.FT_Done_Library(global.freetype_lib);
         freetype_utils.errorPrint(err, "Failed to free FreeType Library", .{});
     }
 
-    for (self.internal.alloc_user.alloc_list.items) |allocation| {
+    for (global.internal.alloc_user.alloc_list.items) |allocation| {
         log.warn("FreeType failed to deallocate {} bytes at 0x{x}", .{ allocation.len, @intFromPtr(allocation.ptr) });
-        self.internal.alloc_user.allocator.free(allocation);
+        global.internal.alloc_user.allocator.free(allocation);
     }
 
-    self.internal.alloc_user.alloc_list.deinit(self.internal.alloc_user.allocator);
+    global.internal.alloc_user.alloc_list.deinit(global.internal.alloc_user.allocator);
 
-    self.internal.parent_allocator.destroy(self);
+    global = undefined;
 }
 
-const OutputContext = @import("OutputContext.zig");
-const config = &@import("Config.zig").config;
+pub fn setFontSize(self: *const FreeTypeContext, output_context: *const DrawContext.OutputContext, font_size: u32) void {
+    // screen size in milimeters
+    const physical_height: u32 = output_context.physical_height;
+    const physical_width: u32 = output_context.physical_width;
+
+    // screen pixel size
+    const height: u32 = output_context.height;
+    const width: u32 = output_context.width;
+
+    assert(physical_height > 0);
+    assert(physical_width > 0);
+    assert(height > 0);
+    assert(width > 0);
+
+    // mm to inches, (mm * 5) / 127, convert physical from mm to inches, then take pixel and divide by physical.
+    const horz_dpi = (height * 127) / (physical_height * 5);
+    const vert_dpi = (width * 127) / (physical_width * 5);
+
+    const err = freetype.FT_Set_Char_Size(
+        self.font_face,
+        @intCast(font_size << 6), // multiply by 64 because they measure it in 1/64 points
+        0,
+        @intCast(horz_dpi),
+        @intCast(vert_dpi),
+    );
+    freetype_utils.errorAssert(err, "Failed to set font size", .{});
+}
+
+test global {
+    try init_global(std.testing.allocator);
+    defer deinit_global();
+
+    global.setFontSize(&.{
+        .output = undefined,
+        .id = undefined,
+
+        .physical_width = 800,
+        .physical_height = 330,
+
+        .width = 3440,
+        .height = 1440,
+    }, 50 * 64);
+}
+
+const DrawContext = @import("DrawContext.zig");
+const Config = @import("Config.zig");
 
 const drawing = @import("drawing.zig");
 const freetype_utils = @import("freetype_utils.zig");
@@ -139,4 +149,4 @@ const mem = std.mem;
 const assert = std.debug.assert;
 const Allocator = mem.Allocator;
 
-const log = std.log.scoped(.FreetypeContext);
+const log = std.log.scoped(.FreeTypeContext);
