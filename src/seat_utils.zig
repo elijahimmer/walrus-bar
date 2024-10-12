@@ -11,6 +11,8 @@ pub fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, wayland_context: *Wayl
 
             if (capabilities.capabilities.pointer) {
                 const pointer = seat.getPointer() catch @panic("Failed to get pointer");
+
+                assert(wayland_context.pointer == null); // only allow one pointer device. TODO: See if we should allow multiple
                 wayland_context.pointer = pointer;
 
                 pointer.setListener(*WaylandContext, pointerListener, wayland_context);
@@ -24,7 +26,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
     const log_local = std.log.scoped(.Pointer);
 
     const checker = struct {
-        pub fn checker(draw_context: *DrawContext, target: *wl.Surface) bool {
+        pub fn checker(draw_context: *const DrawContext, target: *wl.Surface) bool {
             return draw_context.surface == target;
         }
     };
@@ -34,7 +36,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
             if (enter.surface) |surface| {
                 const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker.checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = wayland_context.outputs.slice()[output_idx];
+                const draw_context = wayland_context.outputs.items[output_idx];
 
                 log_local.debug("Cursor entered surface on {s}", .{draw_context.output_context.name});
             } else {
@@ -45,7 +47,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
             if (leave.surface) |surface| {
                 const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker.checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = wayland_context.outputs.slice()[output_idx];
+                const draw_context = wayland_context.outputs.items[output_idx];
 
                 log_local.debug("Cursor left surface on {s}", .{draw_context.output_context.name});
             } else {

@@ -34,6 +34,7 @@ pub const AllocUser = struct {
 };
 
 pub fn alloc(memory: FT_Memory, size_long: c_long) callconv(.C) ?*anyopaque {
+    if (options.freetype_allocation_logging) alloc_log.debug("alloc - len: {}", .{size_long});
     assert(size_long > 0);
     assert(memory != null);
     assert(memory.*.user != null);
@@ -63,6 +64,8 @@ pub fn free(memory: FT_Memory, ptr: ?*anyopaque) callconv(.C) void {
         @panic("FreeType freed an unowned pointer");
     };
 
+    if (options.freetype_allocation_logging) alloc_log.debug("free - len: {}", .{allocation.len});
+
     user.allocator.free(allocation);
 
     _ = user.alloc_list.swapRemove(idx);
@@ -88,6 +91,8 @@ pub fn realloc(memory: FT_Memory, cur_size_long: c_long, new_size_long: c_long, 
         }
         @panic("FreeType resized an unowned pointer");
     };
+
+    if (options.freetype_allocation_logging) alloc_log.debug("realloc - actual_len: {}, cur_len: {}, new_len: {}", .{ allocation.len, cur_size, new_size });
 
     assert(cur_size == allocation.len);
 
@@ -155,4 +160,5 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
-const log = std.log.scoped(.FreeType_Alloc);
+const log = std.log.scoped(.FreeType_utils);
+const alloc_log = std.log.scoped(.FreeType_alloc);

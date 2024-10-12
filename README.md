@@ -1,5 +1,5 @@
-# Zig Prompt
-A simple wayland prompting utility
+# Walrus Bar
+My third attempt at a wlroots/hyprland status bar.
 
 ## Fonts
 By default this embeds the Fira Nerd Font Mono font into the program,

@@ -15,14 +15,15 @@ pub fn build(b: *std.Build) void {
     });
 
     const options = b.addOptions();
+    const font = b.addOptions();
 
     const font_path = b.option([]const u8, "font-path", "Path to font to use") orelse "fonts/FiraCodeNerdFontMono-Regular.ttf";
     const font_file = std.fs.cwd().openFile(font_path, .{ .mode = .read_only }) catch @panic("Failed to open font file");
     const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file (maybe larger than 5Mbs)?");
-    options.addOption([]const u8, "font_data", font_data);
+    font.addOption([]const u8, "font_data", font_data);
 
     const FreeTypeAllocatorOptions = enum { c, zig };
-    const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .c;
+    const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .zig;
     options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
 
     const freetype_allocation_logging = b.option(bool, "freetype-allocation-logging", "Whether or not to log FreeType Allocations.") orelse false;
@@ -62,7 +63,9 @@ pub fn build(b: *std.Build) void {
         // TODO: remove when https://github.com/ziglang/zig/issues/131 is implemented
         scanner.addCSource(l);
 
+        l.step.dependOn(&font.step);
         l.step.dependOn(&options.step);
+        l.root_module.addOptions("font", font);
         l.root_module.addOptions("options", options);
 
         l.root_module.addImport("clap", clap.module("clap"));

@@ -1,12 +1,18 @@
+pub const DefaultOutputArraySize: usize = 16;
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
+    var stack_fallback = std.heap.stackFallback(@sizeOf(DrawContext) * DefaultOutputArraySize * 2, gpa.allocator());
+    const stack_fallback_allocator = stack_fallback.get();
+    var logging_allocator = std.heap.LoggingAllocator(.debug, .warn).init(stack_fallback_allocator);
+    const allocator = logging_allocator.allocator();
 
     try Config.init_global(allocator);
     defer Config.deinit_global();
 
-    try FreeTypeContext.init_global(allocator);
+    // don't use logging allocator as you can enable it separately.
+    try FreeTypeContext.init_global(stack_fallback_allocator);
     defer FreeTypeContext.deinit_global();
 
     const display = try wl.Display.connect(null);
@@ -16,6 +22,8 @@ pub fn main() !void {
         .display = display,
         .registry = registry,
         .allocator = allocator,
+
+        .outputs = try WaylandContext.OutputsArray.initCapacity(allocator, DefaultOutputArraySize),
     };
     defer wayland_context.deinit();
 

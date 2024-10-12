@@ -1,3 +1,8 @@
+//! This manages the FreeType library's context, including allocations it makes.
+//!
+//! TODO: Implement caching, and see if that is needed. (maybe behind compile option)
+//!
+
 pub const FreeTypeContext = @This();
 pub var global: FreeTypeContext = undefined;
 
@@ -46,7 +51,7 @@ pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
 
     // TODO: allow for runtime custom font
     {
-        const font_data = options.font_data;
+        const font_data = font.font_data;
         const err = freetype.FT_New_Memory_Face(global.freetype_lib, font_data.ptr, font_data.len, 0, &global.font_face);
         freetype_utils.errorAssert(err, "Failed to initilize font", .{});
     }
@@ -100,17 +105,86 @@ pub fn setFontSize(self: *const FreeTypeContext, output_context: *const DrawCont
     assert(width > 0);
 
     // mm to inches, (mm * 5) / 127, convert physical from mm to inches, then take pixel and divide by physical.
-    const horz_dpi = (height * 127) / (physical_height * 5);
+    const hori_dpi = (height * 127) / (physical_height * 5);
     const vert_dpi = (width * 127) / (physical_width * 5);
 
     const err = freetype.FT_Set_Char_Size(
         self.font_face,
         @intCast(font_size << 6), // multiply by 64 because they measure it in 1/64 points
         0,
-        @intCast(horz_dpi),
+        @intCast(hori_dpi),
         @intCast(vert_dpi),
     );
     freetype_utils.errorAssert(err, "Failed to set font size", .{});
+}
+
+// TODO: Fix this.
+pub fn setFontPixelSize(self: *const FreeTypeContext, output_context: *const DrawContext.OutputContext, width: u32, height: u32) void {
+    // screen size in milimeters
+    const physical_height: u32 = output_context.physical_height;
+    const physical_width: u32 = output_context.physical_width;
+
+    assert(physical_height > 0);
+    assert(physical_width > 0);
+    assert(height > 0 or width > 0);
+
+    // mm to inches, (mm * 5) / 127, convert physical from mm to inches, then take pixel and divide by physical.
+    const hori_dpi = (height * 127) / (physical_height * 5);
+    const vert_dpi = (width * 127) / (physical_width * 5);
+
+    var size_req = freetype.FT_Size_RequestRec{
+        .type = freetype.FT_SIZE_REQUEST_TYPE_REAL_DIM,
+        .width = width << 6,
+        .height = height << 6,
+        .horiResolution = hori_dpi,
+        .vertResolution = vert_dpi,
+    };
+
+    const err = freetype.FT_Request_Size(
+        self.font_face,
+        &size_req,
+    );
+    freetype_utils.errorAssert(err, "Failed to set font size", .{});
+}
+
+pub const loadCharFlags = enum {
+    default,
+    render,
+};
+
+/// char_slice should be a single UTF8 Codepoint.
+pub fn loadChar(self: *const FreeTypeContext, char_slice: []const u8, flag: loadCharFlags) freetype.FT_GlyphSlot {
+    assert(char_slice.len > 0);
+
+    const utf8_char = unicode.utf8Decode(char_slice) catch |err| utf8_char: {
+        log.warn("\tFailed to decode character as UTF8 with: {s}", .{@errorName(err)});
+
+        break :utf8_char 0;
+    };
+
+    const freetype_flags: i32 = switch (flag) {
+        .default => freetype.FT_LOAD_DEFAULT,
+        .render => freetype.FT_LOAD_RENDER,
+    };
+
+    const err = freetype.FT_Load_Char(self.font_face, utf8_char, freetype_flags);
+
+    if (freetype_utils.isErr(err)) {
+        freetype_utils.errorPrint(err, "Failed to load Glyph with", .{});
+
+        const err2 = freetype.FT_Load_Glyph(self.font_face, 0, freetype_flags);
+        freetype_utils.errorAssert(err2, "Failed to load replacement glyph!", .{});
+    }
+
+    return self.font_face.*.glyph;
+}
+
+/// Draws the bitmap of the loaded character with
+pub fn drawChar(self: *const FreeTypeContext, draw_context: *const DrawContext, origin: Point, color: Color) void {
+    _ = self;
+    _ = draw_context;
+    _ = origin;
+    _ = color;
 }
 
 test global {
@@ -133,10 +207,16 @@ const DrawContext = @import("DrawContext.zig");
 const Config = @import("Config.zig");
 
 const drawing = @import("drawing.zig");
+const Point = drawing.Point;
+
+const colors = @import("colors.zig");
+const Color = colors.Color;
+
 const freetype_utils = @import("freetype_utils.zig");
 const options = @import("options");
+const font = @import("font");
 
-const freetype = @cImport({
+pub const freetype = @cImport({
     @cInclude("ft2build.h");
     @cInclude("freetype/freetype.h");
     @cInclude("freetype/ftsystem.h");
@@ -147,6 +227,8 @@ const FT_Memory = freetype.FT_Memory;
 const std = @import("std");
 const mem = std.mem;
 const assert = std.debug.assert;
+const unicode = std.unicode;
+
 const Allocator = mem.Allocator;
 
 const log = std.log.scoped(.FreeTypeContext);

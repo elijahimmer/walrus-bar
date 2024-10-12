@@ -2,12 +2,12 @@
 //! The names are only valid when the ptr assosiated is not null.
 
 pub const WaylandContext = @This();
-pub const MAX_OUTPUT_COUNT: usize = 16;
+pub const OutputsArray = ArrayListUnmanaged(DrawContext);
 display: *wl.Display,
 registry: *wl.Registry,
 allocator: Allocator,
 
-outputs: BoundedArray(DrawContext, MAX_OUTPUT_COUNT) = .{},
+outputs: OutputsArray,
 
 compositor: ?*wl.Compositor = null,
 compositor_name: u32 = undefined,
@@ -30,11 +30,13 @@ pub fn deinit(self: *WaylandContext) void {
     if (self.pointer) |pointer| pointer.release();
     if (self.seat) |seat| seat.release();
 
-    for (self.outputs.slice()) |*output| output.deinit(self.allocator);
+    for (self.outputs.items) |*output| output.deinit(self.allocator);
 
     if (self.shm) |shm| shm.destroy();
     if (self.layer_shell) |layer_shell| layer_shell.destroy();
     if (self.compositor) |compositor| compositor.destroy();
+
+    self.outputs.deinit(self.allocator);
 
     self.* = undefined;
 }
@@ -43,10 +45,10 @@ pub fn deinit(self: *WaylandContext) void {
 /// Used to identify a output by a pointer to a object it contains.
 /// This panics if the checker returns true on two or more outputs, so the identifier
 /// should be output unique
-pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*DrawContext, T) bool) ?u32 {
+pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const DrawContext, T) bool) ?u32 {
     var output_idx: ?u32 = null;
 
-    for (self.outputs.slice(), 0..) |*output, index| {
+    for (self.outputs.items, 0..) |*output, index| {
         if (checker(output, target)) {
             if (output_idx != null) @panic("Two Outputs with the same " ++ @typeName(T) ++ " found!");
             output_idx = @intCast(index);
@@ -73,27 +75,29 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                 const output = registry.bind(global.name, wl.Output, wl.Output.generated_version) catch return;
                 output.setListener(*WaylandContext, DrawContext.outputListener, context);
 
-                context.outputs.append(.{
+                context.outputs.append(context.allocator, .{
                     .output_context = .{
                         .output = output,
                         .id = global.name,
                     },
 
-                    .widget_left = drawing.newTextWidget(.{
+                    .widget_left = TextBox.new(.{
                         .allocator = context.allocator,
 
                         .area = .{
                             .x = 0,
                             .y = 0,
-                            .width = 500,
+                            .width = 1000,
                             .height = config.height,
                         },
 
-                        .text = "Test",
+                        .text = "173629",
 
                         .text_color = colors.rose,
                         .outline_color = colors.pine,
                         .background_color = colors.surface,
+
+                        .scaling = .zero,
                     }) catch @panic("OOM"),
                 }) catch @panic("Too many outputs!");
 
@@ -128,7 +132,7 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
             log_local.debug("unknown global ignored: '{s}'", .{global.interface});
         },
         .global_remove => |global| {
-            for (context.outputs.slice(), 0..) |*draw_context, idx| {
+            for (context.outputs.items, 0..) |*draw_context, idx| {
                 const output_context = &draw_context.output_context;
                 if (output_context.id == global.name) {
                     log_local.debug("Output '{s}' was removed", .{output_context.name});
@@ -166,6 +170,7 @@ pub fn shmListener(shm: *wl.Shm, event: wl.Shm.Event, has_argb8888: *bool) void 
 
 const DrawContext = @import("DrawContext.zig");
 const seat_utils = @import("seat_utils.zig");
+const TextBox = @import("TextBox.zig");
 const drawing = @import("drawing.zig");
 
 const colors = @import("colors.zig");
@@ -180,7 +185,7 @@ const zwlr = wayland.client.zwlr;
 const std = @import("std");
 const mem = std.mem;
 
-const BoundedArray = std.BoundedArray;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
 
 const assert = std.debug.assert;

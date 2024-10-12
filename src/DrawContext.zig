@@ -22,9 +22,9 @@ window_area: Rect = .{
 has_started: bool = false,
 full_redraw: bool = true,
 
-widget_left: ?Widget = null,
-widget_center: ?Widget = null,
-widget_right: ?Widget = null,
+widget_left: ?*Widget = null,
+widget_center: ?*Widget = null,
+widget_right: ?*Widget = null,
 
 pub const OutputContext = struct {
     output: *wl.Output,
@@ -50,9 +50,9 @@ pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
     else
         log.debug("Output id #{} was deinited", .{draw_context.output_context.id});
 
-    if (draw_context.widget_left) |*widget_left| widget_left.deinit(allocator);
-    if (draw_context.widget_right) |*widget_right| widget_right.deinit(allocator);
-    if (draw_context.widget_center) |*widget_center| widget_center.deinit(allocator);
+    if (draw_context.widget_left) |widget_left| widget_left.deinit(allocator);
+    if (draw_context.widget_right) |widget_right| widget_right.deinit(allocator);
+    if (draw_context.widget_center) |widget_center| widget_center.deinit(allocator);
 
     if (draw_context.shm_buffer) |shm_buffer| shm_buffer.destroy();
     if (draw_context.shm_fd) |shm_fd| posix.close(shm_fd);
@@ -169,9 +169,9 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
         "widget_center",
         "widget_right",
     }) |name| {
-        if (@field(draw_context, name)) |*w| {
+        if (@field(draw_context, name)) |w| {
             w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
-            w.area_changed = false;
+            w.full_redraw = false;
         }
     }
 
@@ -185,7 +185,7 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
     }
 
     const output_checker = struct {
-        pub fn checker(draw_context: *DrawContext, target: *wl.Callback) bool {
+        pub fn checker(draw_context: *const DrawContext, target: *wl.Callback) bool {
             return draw_context.frame_callback == target;
         }
     }.checker;
@@ -197,7 +197,7 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
         &output_checker,
     ) orelse @panic("Output not found for drawing!");
 
-    const draw_context = &wayland_context.outputs.slice()[output_idx];
+    const draw_context = &wayland_context.outputs.items[output_idx];
 
     draw_context.draw(wayland_context);
 
@@ -210,7 +210,7 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
 
 pub fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.LayerSurfaceV1.Event, wayland_context: *WaylandContext) void {
     const output_checker = struct {
-        pub fn checker(draw_context: *DrawContext, target: *zwlr.LayerSurfaceV1) bool {
+        pub fn checker(draw_context: *const DrawContext, target: *zwlr.LayerSurfaceV1) bool {
             return draw_context.layer_surface == target;
         }
     }.checker;
@@ -221,7 +221,7 @@ pub fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.Lay
         &output_checker,
     ) orelse @panic("LayerSurface not found for event!");
 
-    const drawing_context = &wayland_context.outputs.slice()[output_idx];
+    const drawing_context = &wayland_context.outputs.items[output_idx];
 
     switch (event) {
         .configure => |configure| {
@@ -255,14 +255,14 @@ pub fn surfaceListener(surface: *wl.Surface, event: wl.Surface.Event, wayland_co
 
 pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_context: *WaylandContext) void {
     const output_checker = struct {
-        pub fn checker(draw_context: *DrawContext, target: *wl.Output) bool {
+        pub fn checker(draw_context: *const DrawContext, target: *wl.Output) bool {
             return draw_context.output_context.output == target;
         }
     }.checker;
 
     const output_idx = wayland_context.findOutput(*wl.Output, output, &output_checker) orelse @panic("Output not found!");
 
-    var draw_context = &wayland_context.outputs.slice()[output_idx];
+    var draw_context = &wayland_context.outputs.items[output_idx];
     var output_context = &draw_context.output_context;
 
     if (output_context.has_name) {
@@ -321,6 +321,8 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
                     // TODO: shouldn't render (zero size)-- make sure it doesn't.
                 }
             }
+
+            output_context.changed = false;
         },
     }
 }

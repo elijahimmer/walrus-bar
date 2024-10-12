@@ -21,7 +21,7 @@ pub const Rect = struct {
     width: u31,
     height: u31,
 
-    pub fn fill(self: Rect, draw_context: *DrawContext, color: Color) void {
+    pub fn fill(self: Rect, draw_context: *const DrawContext, color: Color) void {
         assert(draw_context.window_rect.width >= self.x + self.width);
         assert(draw_context.window_rect.height >= self.y + self.height);
 
@@ -37,8 +37,8 @@ pub const Rect = struct {
         assert(self.y <= inner.y);
         assert(self.width >= inner.width);
         assert(self.height >= inner.height);
-        assert(self.x + self.width <= inner.x + inner.width);
-        assert(self.y + self.height <= inner.y + inner.height);
+        assert(self.x + self.width >= inner.x + inner.width);
+        assert(self.y + self.height >= inner.y + inner.height);
     }
 
     pub fn assertContainsPoint(self: Rect, point: Point) void {
@@ -48,7 +48,40 @@ pub const Rect = struct {
         assert(self.y + self.height >= point.y);
     }
 
-    pub fn drawArea(self: Rect, draw_context: *DrawContext, color: Color) void {
+    /// Returns a intersecting rectangle. Asserts they actually intersect.
+    pub fn intersection(self: Rect, other: Rect) Rect {
+        const x_start = @max(self.x, other.x);
+        const y_start = @max(self.y, other.y);
+        const x_end = @min(self.x + self.width, other.x + other.width);
+        const y_end = @min(self.y + self.height, other.y + other.height);
+
+        assert(x_start <= x_end); // make sure they actually intersect
+        assert(y_start <= y_end); // make sure they actually intersect
+
+        return .{
+            .x = x_start,
+            .y = y_start,
+            .width = x_end - x_start,
+            .height = y_end - y_start,
+        };
+    }
+
+    /// Returns the smallest possible rectangle that contains both other rectangles.
+    pub fn boundingBox(self: Rect, other: Rect) Rect {
+        const x_start = @min(self.x, other.x);
+        const y_start = @min(self.y, other.y);
+        const x_end = @max(self.x + self.width, other.x + other.width);
+        const y_end = @max(self.y + self.height, other.y + other.height);
+
+        return .{
+            .x = x_start,
+            .y = y_start,
+            .width = x_end - x_start,
+            .height = y_end - y_start,
+        };
+    }
+
+    pub fn drawArea(self: Rect, draw_context: *const DrawContext, color: Color) void {
         const x_min = self.x;
         const y_min = self.y;
 
@@ -64,11 +97,11 @@ pub const Rect = struct {
         }
     }
 
-    pub fn damageArea(self: Rect, draw_context: *DrawContext) void {
+    pub fn damageArea(self: Rect, draw_context: *const DrawContext) void {
         draw_context.surface.?.damageBuffer(self.x, self.y, self.width, self.height);
     }
 
-    pub fn drawOutline(self: Rect, draw_context: *DrawContext, color: Color) void {
+    pub fn drawOutline(self: Rect, draw_context: *const DrawContext, color: Color) void {
         const x_min = self.x;
         const y_min = self.y;
 
@@ -87,60 +120,36 @@ pub const Rect = struct {
 
         for (x_min..x_max) |x_coord| {
             draw_context.screen[y_min * width + x_coord] = color;
-            draw_context.screen[(y_max - 1) * width + x_coord - 1] = color;
+            draw_context.screen[(y_max - 1) * width + x_coord] = color;
         }
     }
 
-    pub fn damageOutline(self: Rect, draw_context: *DrawContext) void {
+    pub fn damageOutline(self: Rect, draw_context: *const DrawContext) void {
         draw_context.surface.?.damageBuffer(self.x, self.y, self.width, 1);
         draw_context.surface.?.damageBuffer(self.x, self.y, 1, self.height);
         draw_context.surface.?.damageBuffer(self.x + self.width, self.y, 1, self.height);
         draw_context.surface.?.damageBuffer(self.x, self.y + self.height, self.width, 1);
     }
-};
 
-pub const Widget = struct {
-    const VTable = struct {
-        draw: *const fn (*const Widget, *DrawContext) anyerror!void,
-        //update: *const fn (*Widget, *DrawContext) anyerror!void,
+    pub fn putPixel(self: Rect, area_local_point: Point, draw_context: *const DrawContext, color: Color) void {
+        const x_coord = self.x + area_local_point.x;
+        const y_coord = self.y + area_local_point.y;
 
-        deinit: *const fn (*const Widget, Allocator) void,
-    };
-    vtable: VTable,
-    inner: *anyopaque,
+        const width = draw_context.window_area.width;
 
-    area: Rect,
-    area_changed: bool = true,
-
-    pub inline fn draw(self: *const Widget, draw_context: *DrawContext) anyerror!void {
-        try self.vtable.draw(self, draw_context);
-    }
-
-    pub inline fn deinit(self: *Widget, allocator: Allocator) void {
-        self.vtable.deinit(self, allocator);
-    }
-
-    pub fn putPixel(
-        self: *Widget,
-        draw_context: *DrawContext,
-        area_local_point: Point,
-        color: Color,
-    ) void {
-        const x_coord = self.area.x + area_local_point.x;
-        const y_coord = self.area.y + area_local_point.y;
         draw_context.window_area.assertContainsPoint(.{ .x = x_coord, .y = y_coord });
-
-        draw_context.screen[y_coord * draw_context.window_area.width + x_coord] = color;
+        draw_context.screen[y_coord * width + x_coord] = color;
     }
 
-    pub fn putPixelComposite(
-        self: *Widget,
-        draw_context: *DrawContext,
+    pub fn putComposite(
+        self: Rect,
+        draw_context: *const DrawContext,
         area_local_point: Point,
         color: Color,
     ) void {
-        const x_coord = self.area.x + area_local_point.x;
-        const y_coord = self.area.y + area_local_point.y;
+        const x_coord = self.x + area_local_point.x;
+        const y_coord = self.y + area_local_point.y;
+
         const width = draw_context.window_area.width;
 
         draw_context.window_area.assertContainsPoint(.{ .x = x_coord, .y = y_coord });
@@ -151,82 +160,35 @@ pub const Widget = struct {
 
         draw_context.screen[y_coord * width + x_coord] = new_color;
     }
-
-    pub fn getInner(self: *Widget, T: type) *T {
-        return @ptrCast(self.inner);
-    }
 };
 
-pub const TextInner = struct {
-    const TextArray = BoundedArray(u8, 32);
-    text: TextArray,
-
-    text_color: Color,
-    outline_color: Color,
-    background_color: Color,
-
-    pub fn draw(widget: *const Widget, draw_context: *DrawContext) anyerror!void {
-        const self: *TextInner = @ptrCast(@alignCast(widget.inner));
-        const area = widget.area;
-
-        if (draw_context.full_redraw or widget.area_changed) {
-            area.drawArea(draw_context, self.text_color);
-
-            area.drawOutline(draw_context, self.outline_color);
-        }
-    }
-
-    //pub fn update(widget: *Widget, draw_context: *DrawContext) anyerror!void {
-    //    const self: *TextInner = @ptrCast(@alignCast(widget.inner));
-    //    const area = widget.area;
-
-    //    _ = self;
-    //    _ = area;
-    //    _ = draw_context;
-    //}
-
-    pub fn deinit(widget: *const Widget, allocator: Allocator) void {
-        const self: *TextInner = @ptrCast(@alignCast(widget.inner));
-
-        allocator.destroy(self);
-    }
-};
-
-pub const NewTextWidgetArgs = struct {
-    allocator: Allocator,
+pub const Widget = struct {
+    const VTable = struct {
+        draw: *const fn (*Widget, *const DrawContext) anyerror!void,
+        deinit: *const fn (*Widget, Allocator) void,
+    };
+    vtable: *const VTable,
 
     area: Rect,
 
-    /// Text has to be alive for the lifetime of the widget.
-    text: []const u8,
+    /// This should be true anytime the widget needs to redraw.
+    /// So if the area is changed or the glyph needs to for other reasons.
+    full_redraw: bool = true,
 
-    text_color: Color,
-    outline_color: Color,
-    background_color: Color,
+    pub inline fn draw(self: *Widget, draw_context: *const DrawContext) anyerror!void {
+        try self.vtable.draw(self, draw_context);
+    }
+
+    pub inline fn deinit(self: *Widget, allocator: Allocator) void {
+        self.vtable.deinit(self, allocator);
+    }
+
+    pub fn getParent(self: *Widget, T: type) *T {
+        return @fieldParentPtr("widget", self);
+    }
 };
 
-pub fn newTextWidget(args: NewTextWidgetArgs) Allocator.Error!Widget {
-    const text_inner = try args.allocator.create(TextInner);
-    text_inner.* = .{
-        .text = TextInner.TextArray.fromSlice(args.text) catch @panic("Text too large for text box."),
-
-        .text_color = args.text_color,
-        .outline_color = args.outline_color,
-        .background_color = args.background_color,
-    };
-
-    return .{
-        .vtable = .{
-            .draw = &TextInner.draw,
-            //.update = &TextInner.update,
-
-            .deinit = &TextInner.deinit,
-        },
-        .inner = text_inner,
-
-        .area = args.area,
-    };
-}
+pub const Align = enum { start, center, end };
 
 const DrawContext = @import("DrawContext.zig");
 const freetype_context = &@import("FreeTypeContext.zig").global;
@@ -237,6 +199,5 @@ const Color = colors.Color;
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
-const BoundedArray = std.BoundedArray;
 
 const assert = std.debug.assert;
