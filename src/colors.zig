@@ -132,7 +132,7 @@ test str2Color {
     try expectEqual(0xFF112233, @as(u32, @bitCast(try str2Color("#123"))));
 }
 
-// assumes compositing onto opaque (alpha == 255)
+// Simply blends the two colors together by multiplying them by the `fg`'s alpha/255
 pub fn composite(bg: Color, fg: Color) Color {
     const ratio = @as(f32, @floatFromInt(fg.a)) / 255.0;
     const ratio_old = @max(1.0 - ratio, 0.0);

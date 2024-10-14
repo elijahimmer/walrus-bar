@@ -81,24 +81,7 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                         .id = global.name,
                     },
 
-                    .widget_left = TextBox.new(.{
-                        .allocator = context.allocator,
-
-                        .area = .{
-                            .x = 0,
-                            .y = 0,
-                            .width = 1000,
-                            .height = config.height,
-                        },
-
-                        .text = "173629",
-
-                        .text_color = colors.rose,
-                        .outline_color = colors.pine,
-                        .background_color = colors.surface,
-
-                        .scaling = .zero,
-                    }) catch @panic("OOM"),
+                    .widget_left = undefined,
                 }) catch @panic("Too many outputs!");
 
                 return;
@@ -168,6 +151,7 @@ pub fn shmListener(shm: *wl.Shm, event: wl.Shm.Event, has_argb8888: *bool) void 
     }
 }
 
+const Clock = @import("Clock.zig");
 const DrawContext = @import("DrawContext.zig");
 const seat_utils = @import("seat_utils.zig");
 const TextBox = @import("TextBox.zig");

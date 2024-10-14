@@ -157,6 +157,20 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
     draw_context.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
 
     draw_context.surface.?.commit();
+
+    if (draw_context.widget_left) |widget_left| widget_left.deinit(wayland_context.allocator);
+    draw_context.widget_left = try Clock.new(wayland_context.allocator, draw_context, .{
+        .text_color = colors.rose,
+        .outline_color = colors.pine,
+        .background_color = colors.surface,
+
+        .area = .{
+            .x = 0,
+            .y = 0,
+            .width = 1000,
+            .height = draw_context.window_area.height,
+        },
+    });
 }
 
 pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
@@ -337,6 +351,8 @@ const all_colors = colors.all_colors;
 
 const Config = @import("Config.zig");
 const config = &Config.global;
+
+const Clock = @import("Clock.zig");
 
 const drawing = @import("drawing.zig");
 const Rect = drawing.Rect;
