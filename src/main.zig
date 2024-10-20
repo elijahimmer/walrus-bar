@@ -1,23 +1,25 @@
-pub const DefaultOutputArraySize: usize = 16;
+pub const DefaultOutputArraySize: usize = 2;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .thread_safe = false, // we should only ever use it on the main (wayland) thread.
+    }){};
     defer _ = gpa.deinit();
-    var stack_fallback = std.heap.stackFallback(@sizeOf(DrawContext) * DefaultOutputArraySize * 2, gpa.allocator());
-    const stack_fallback_allocator = stack_fallback.get();
-    var logging_allocator = std.heap.LoggingAllocator(.debug, .warn).init(stack_fallback_allocator);
+    var logging_allocator = std.heap.LoggingAllocator(.debug, .warn).init(gpa.allocator());
     const allocator = logging_allocator.allocator();
 
     try Config.init_global(allocator);
     defer Config.deinit_global();
 
     // don't use logging allocator as you can enable it separately.
-    try FreeTypeContext.init_global(stack_fallback_allocator);
+    try FreeTypeContext.init_global(gpa.allocator());
     defer FreeTypeContext.deinit_global();
 
+    // start wayland connection.
     const display = try wl.Display.connect(null);
     var registry = try display.getRegistry();
 
+    // initialize the app's context.
     var wayland_context = WaylandContext{
         .display = display,
         .registry = registry,
@@ -27,14 +29,18 @@ pub fn main() !void {
     };
     defer wayland_context.deinit();
 
+    // set registry to set values in wayland_context
     registry.setListener(*WaylandContext, WaylandContext.registryListener, &wayland_context);
+
     // populate initial registry
     if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     while (wayland_context.running) {
+        // dispatch and handle all messages to and fro.
         switch (display.dispatch()) {
             .SUCCESS => {},
             .INVAL => {
+                // we sent a invalid response (which is a bug) and should just stop
                 log.warn("Roundtrip Failed with Invalid Request", .{});
                 break;
             },

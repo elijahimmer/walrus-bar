@@ -54,12 +54,29 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 log_local.warn("Cursor left but not on a surface?", .{});
             }
         },
-        .button => {
-            wayland_context.running = false;
+        .button => |button| {
+            if (button.state != .pressed) return;
+
+            switch (@as(MouseButtons, @enumFromInt(button.button))) {
+                .middle_click => {
+                    wayland_context.running = false;
+                },
+                .left_click, .right_click => {},
+                _ => {
+                    log.debug("unknown button pressed: {}", .{button.button});
+                },
+            }
         },
         .motion, .axis, .frame, .axis_source, .axis_stop, .axis_discrete, .axis_value120, .axis_relative_direction => {},
     }
 }
+
+pub const MouseButtons = enum(u16) {
+    left_click = 272,
+    right_click = 273,
+    middle_click = 274,
+    _,
+};
 
 const WaylandContext = @import("WaylandContext.zig");
 const DrawContext = @import("DrawContext.zig");

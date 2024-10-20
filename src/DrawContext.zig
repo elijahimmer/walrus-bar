@@ -1,4 +1,6 @@
 pub const DrawContext = @This();
+pub const DamageList = if (options.track_damage) BoundedArray(Rect, 16) else void;
+pub const damage_list_init = if (options.track_damage) .{} else undefined;
 
 output_context: OutputContext,
 
@@ -19,11 +21,14 @@ window_area: Rect = .{
     .height = 0,
 },
 
+damage_list: DamageList = damage_list_init,
+damage_prev: DamageList = damage_list_init,
+
 has_started: bool = false,
 full_redraw: bool = true,
 
 widget_left: ?*Widget = null,
-widget_center: ?*Widget = null,
+widget_center: ?Clock = null,
 widget_right: ?*Widget = null,
 
 pub const OutputContext = struct {
@@ -44,6 +49,28 @@ pub const OutputContext = struct {
     name: []const u8 = undefined,
 };
 
+pub fn damage(draw_context: *DrawContext, area: Rect) void {
+    if (options.track_damage) {
+        draw_context.damage_list.append(area) catch @panic("the Damage list is full, increase list size.");
+    } else {
+        area.damageArea(draw_context);
+    }
+}
+
+pub const InitArgs = struct {
+    output: *wl.Output,
+    id: u32,
+};
+
+pub fn init(args: InitArgs) DrawContext {
+    return .{
+        .output_context = .{
+            .output = args.output,
+            .id = args.id,
+        },
+    };
+}
+
 pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
     if (draw_context.output_context.has_name)
         log.debug("Output '{s}' (id #{}) was deinited", .{ draw_context.output_context.name, draw_context.output_context.id })
@@ -52,7 +79,6 @@ pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
 
     if (draw_context.widget_left) |widget_left| widget_left.deinit(allocator);
     if (draw_context.widget_right) |widget_right| widget_right.deinit(allocator);
-    if (draw_context.widget_center) |widget_center| widget_center.deinit(allocator);
 
     if (draw_context.shm_buffer) |shm_buffer| shm_buffer.destroy();
     if (draw_context.shm_fd) |shm_fd| posix.close(shm_fd);
@@ -150,18 +176,9 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
     assert(draw_context.shm_buffer != null);
     assert(draw_context.shm_fd != null);
 
-    draw_context.draw(wayland_context);
-    draw_context.surface.?.attach(draw_context.shm_buffer.?, 0, 0);
-
-    draw_context.frame_callback = draw_context.surface.?.frame() catch @panic("Getting Frame Callback Failed.");
-    draw_context.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
-
-    draw_context.surface.?.commit();
-
-    if (draw_context.widget_left) |widget_left| widget_left.deinit(wayland_context.allocator);
-    draw_context.widget_left = try Clock.new(wayland_context.allocator, draw_context, .{
+    draw_context.widget_center = Clock.init(.{
         .text_color = colors.rose,
-        .outline_color = colors.pine,
+        .spacer_color = colors.pine,
         .background_color = colors.surface,
 
         .area = .{
@@ -171,25 +188,20 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
             .height = draw_context.window_area.height,
         },
     });
-}
 
-pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
-    _ = wayland_context;
+    var center_area = draw_context.widget_center.?.widget.area;
+    center_area.width = draw_context.widget_center.?.getWidth();
 
-    //draw_context.surface.?.damageBuffer(0, 0, draw_context.window_width, draw_context.window_height);
+    draw_context.widget_center.?.setArea(draw_context.window_area.center(center_area));
 
-    inline for (.{
-        "widget_left",
-        "widget_center",
-        "widget_right",
-    }) |name| {
-        if (@field(draw_context, name)) |w| {
-            w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
-            w.full_redraw = false;
-        }
-    }
+    draw_context.draw(wayland_context);
+    draw_context.surface.?.attach(draw_context.shm_buffer.?, 0, 0);
 
-    draw_context.full_redraw = false;
+    if (draw_context.frame_callback) |fc| fc.destroy();
+    draw_context.frame_callback = draw_context.surface.?.frame() catch @panic("Getting Frame Callback Failed.");
+    draw_context.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
+
+    draw_context.surface.?.commit();
 }
 
 pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_context: *WaylandContext) void {
@@ -215,6 +227,7 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
 
     draw_context.draw(wayland_context);
 
+    if (draw_context.frame_callback) |fc| fc.destroy();
     draw_context.frame_callback = draw_context.surface.?.frame() catch @panic("Failed Getting Frame Callback.");
     draw_context.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
 
@@ -235,24 +248,24 @@ pub fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.Lay
         &output_checker,
     ) orelse @panic("LayerSurface not found for event!");
 
-    const drawing_context = &wayland_context.outputs.items[output_idx];
+    const draw_context = &wayland_context.outputs.items[output_idx];
 
     switch (event) {
         .configure => |configure| {
             log.debug("Output: '{s}', Layer Shell was configured. width: {}, height: {}", .{
-                drawing_context.output_context.name,
+                draw_context.output_context.name,
                 configure.width,
                 configure.height,
             });
-            drawing_context.window_area.width = @intCast(configure.width);
-            drawing_context.window_area.height = @intCast(configure.height);
+            draw_context.window_area.width = @intCast(configure.width);
+            draw_context.window_area.height = @intCast(configure.height);
 
             layer_surface.ackConfigure(configure.serial);
         },
         .closed => {
-            // TODO: Make sure this is cleaned up properly
-            log.debug("Output: '{s}', Surface done", .{drawing_context.output_context.name});
-            drawing_context.layer_surface = null;
+            // TODO: Make sure this is cleaned up properly. I think it is...
+            log.debug("Output: '{s}', Surface done", .{draw_context.output_context.name});
+            draw_context.layer_surface = null;
         },
     }
 }
@@ -263,7 +276,7 @@ pub fn surfaceListener(surface: *wl.Surface, event: wl.Surface.Event, wayland_co
 
     switch (event) {
         // TODO: Use this for scaling and transform
-        .enter, .leave, .preferred_buffer_scale, .preferred_buffer_transform => {}, // says which surface the window is on. I'd hope it's on the same one.
+        .enter, .leave, .preferred_buffer_scale, .preferred_buffer_transform => {},
     }
 }
 
@@ -341,9 +354,102 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
     }
 }
 
+/// Draw all widgets on to the draw_context's buffer.
+pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
+    _ = wayland_context;
+
+    inline for (.{
+        "widget_left",
+        "widget_right",
+    }) |name| {
+        if (@field(draw_context, name)) |w| {
+            w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
+            w.full_redraw = false;
+        }
+    }
+
+    if (draw_context.widget_center) |*w| {
+        w.draw(draw_context) catch |err| log.warn("Drawing of 'widget_center' failed with: '{s}'", .{@errorName(err)});
+        w.widget.full_redraw = false;
+    }
+
+    if (options.track_damage) {
+        while (draw_context.damage_prev.popOrNull()) |damage_last| {
+            damage_last.drawOutline(draw_context, config.background_color);
+            damage_last.damageOutline(draw_context);
+        }
+
+        while (draw_context.damage_list.popOrNull()) |damage_item| {
+            draw_context.damage_prev.append(damage_item) catch unreachable;
+            damage_item.drawOutline(draw_context, colors.damage);
+
+            damage_item.damageArea(draw_context);
+        }
+    }
+
+    draw_context.full_redraw = false;
+}
+
+pub const DrawBitmapArgs = struct {
+    glyph: freetype.FT_GlyphSlot,
+    text_color: Color,
+    max_area: Rect,
+    origin: Point,
+};
+
+/// Draws a bitmap onto the draw_context's screen in the given max_area.
+/// Any parts the extend past the max_area are not drawn.
+///
+/// Returns immediately if the bitmap or the glyph's area have a zero height or width.
+pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
+    const glyph = args.glyph;
+    const bitmap = args.glyph.*.bitmap;
+    assert(bitmap.buffer != null);
+
+    if (bitmap.rows == 0 or bitmap.width == 0) return;
+
+    const bitmap_left: u31 = @intCast(glyph.*.bitmap_left);
+    const bitmap_top: u31 = @intCast(glyph.*.bitmap_top);
+
+    const glyph_area = Rect{
+        .x = args.origin.x + bitmap_left,
+        .y = args.origin.y -| bitmap_top,
+        .width = @intCast(bitmap.width),
+        .height = @intCast(bitmap.rows),
+    };
+
+    if (glyph_area.width == 0 or glyph_area.height == 0) return;
+
+    const used_area = args.max_area.intersection(glyph_area);
+
+    assert(used_area.width > 0);
+    assert(used_area.height > 0);
+
+    const y_start_local = used_area.y - glyph_area.y;
+
+    for (y_start_local..y_start_local + used_area.height) |y_coord_local| {
+        assert(y_coord_local <= glyph_area.height);
+        const bitmap_row = bitmap.buffer[y_coord_local * bitmap.width ..][0..bitmap.width];
+
+        const x_start_local = used_area.x - glyph_area.x;
+
+        for (x_start_local..x_start_local + used_area.width) |x_coord_local| {
+            assert(x_coord_local <= glyph_area.width);
+
+            var color = args.text_color;
+            color.a = bitmap_row[x_coord_local];
+
+            glyph_area.putComposite(draw_context, .{ .x = @intCast(x_coord_local), .y = @intCast(y_coord_local) }, color);
+        }
+    }
+}
+
 const WaylandContext = @import("WaylandContext.zig");
+const FreeTypeContext = @import("FreeTypeContext.zig");
+const freetype = FreeTypeContext.freetype;
 
 const constants = @import("constants.zig");
+const options = @import("options");
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
@@ -355,6 +461,7 @@ const config = &Config.global;
 const Clock = @import("Clock.zig");
 
 const drawing = @import("drawing.zig");
+const Point = drawing.Point;
 const Rect = drawing.Rect;
 const Widget = drawing.Widget;
 
@@ -368,6 +475,7 @@ const posix = std.posix;
 const meta = std.meta;
 
 const Allocator = std.mem.Allocator;
+const BoundedArray = std.BoundedArray;
 
 const log = std.log.scoped(.DrawContext);
 const panic = std.debug.panic;

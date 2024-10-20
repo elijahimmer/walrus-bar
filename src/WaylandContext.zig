@@ -3,28 +3,52 @@
 
 pub const WaylandContext = @This();
 pub const OutputsArray = ArrayListUnmanaged(DrawContext);
+
+/// The Wayland connection itself.
 display: *wl.Display,
+
+/// The registry that holds and controls all the global variables.
 registry: *wl.Registry,
+
+/// The general allocator for everything to use.
 allocator: Allocator,
 
+/// Stores the info for all the outputs.
 outputs: OutputsArray,
 
+/// used to create all the Wayland surfaces.
 compositor: ?*wl.Compositor = null,
+
+/// only valid when `compositor` is not null.
 compositor_name: u32 = undefined,
 
+/// Handles all the shared memory buffers for the outputs
 shm: ?*wl.Shm = null,
+
+/// only valid when `shm` is not null.
 shm_name: u32 = undefined,
 
+/// handles window layer and placement (i.e. putting it up like a bar)
 layer_shell: ?*zwlr.LayerShellV1 = null,
+
+/// only valid when `layer_shell` is not null.
 layer_shell_name: u32 = undefined,
 
+/// The seat that manages all inputs
+/// TODO: See if we need to store a list here.
 seat: ?*wl.Seat = null,
+
+/// only valid when `seat` is not null.
 seat_name: u32 = undefined,
 
+/// A pointer device.
+/// TODO: See if we need to store a list here.
 pointer: ?*wl.Pointer = null,
 
+/// Whether or not the program should still be running.
 running: bool = true,
 
+/// de-initialize the Wayland context and clean up all the Wayland objects.
 pub fn deinit(self: *WaylandContext) void {
     // destroy pointers first so it is less likely that a event will happen after the output was removed.
     if (self.pointer) |pointer| pointer.release();
@@ -42,9 +66,10 @@ pub fn deinit(self: *WaylandContext) void {
 }
 
 /// Runs the checker on all outputs in the outputs field of a WaylandContext.
-/// Used to identify a output by a pointer to a object it contains.
+/// This used to identify a output by a pointer to a object it contains.
+///
 /// This panics if the checker returns true on two or more outputs, so the identifier
-/// should be output unique
+///     should be output unique
 pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const DrawContext, T) bool) ?u32 {
     var output_idx: ?u32 = null;
 
@@ -58,6 +83,9 @@ pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *
     return output_idx;
 }
 
+/// Listens for all global events to add and remove variables, and does so to the WaylandContext.
+/// i.e. if a output is added or removed, add or remove it.
+/// TODO: Implement removing non-output globals, like seats and such.
 pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *WaylandContext) void {
     const log_local = std.log.scoped(.Registry);
 
@@ -69,20 +97,18 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
 
     switch (event) {
         .global => |global| {
+            // TODO: Implement the matching better maybe?
+            // Hashmaps?
             if (mem.orderZ(u8, global.interface, wl.Output.getInterface().name) == .eq) {
                 log_local.debug("Output Added with id #{}", .{global.name});
 
                 const output = registry.bind(global.name, wl.Output, wl.Output.generated_version) catch return;
                 output.setListener(*WaylandContext, DrawContext.outputListener, context);
 
-                context.outputs.append(context.allocator, .{
-                    .output_context = .{
-                        .output = output,
-                        .id = global.name,
-                    },
-
-                    .widget_left = undefined,
-                }) catch @panic("Too many outputs!");
+                context.outputs.append(context.allocator, DrawContext.init(.{
+                    .output = output,
+                    .id = global.name,
+                })) catch @panic("Too many outputs!");
 
                 return;
             }
@@ -140,6 +166,8 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
     }
 }
 
+/// stub listener to ensure the argb8888 format for buffers is supported.
+/// This should be according to the protocol, but might as well check.0
 pub fn shmListener(shm: *wl.Shm, event: wl.Shm.Event, has_argb8888: *bool) void {
     _ = shm;
     switch (event) {

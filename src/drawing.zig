@@ -81,6 +81,19 @@ pub const Rect = struct {
         };
     }
 
+    /// Center inner box in self. Asserts self is larger than inner
+    pub fn center(self: Rect, inner: Rect) Rect {
+        assert(self.width >= inner.width);
+        assert(self.height >= inner.height);
+
+        return .{
+            .x = self.x + (self.width - inner.width) / 2,
+            .y = self.y + (self.height - inner.height) / 2,
+            .width = inner.width,
+            .height = inner.height,
+        };
+    }
+
     pub fn drawArea(self: Rect, draw_context: *const DrawContext, color: Color) void {
         const x_min = self.x;
         const y_min = self.y;
@@ -164,8 +177,9 @@ pub const Rect = struct {
 
 pub const Widget = struct {
     const VTable = struct {
-        draw: *const fn (*Widget, *const DrawContext) anyerror!void,
+        draw: *const fn (*Widget, *DrawContext) anyerror!void,
         deinit: *const fn (*Widget, Allocator) void,
+        setArea: *const fn (*Widget, Rect) void,
     };
     vtable: *const VTable,
 
@@ -175,12 +189,16 @@ pub const Widget = struct {
     /// So if the area is changed or the glyph needs to for other reasons.
     full_redraw: bool = true,
 
-    pub inline fn draw(self: *Widget, draw_context: *const DrawContext) anyerror!void {
+    pub inline fn draw(self: *Widget, draw_context: *DrawContext) anyerror!void {
         try self.vtable.draw(self, draw_context);
     }
 
     pub inline fn deinit(self: *Widget, allocator: Allocator) void {
         self.vtable.deinit(self, allocator);
+    }
+
+    pub inline fn setArea(self: *Widget, area: Rect) void {
+        self.vtable.setArea(self, area);
     }
 
     pub fn getParent(self: *Widget, T: type) *T {

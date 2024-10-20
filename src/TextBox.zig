@@ -21,11 +21,14 @@ pub const ScalingTypeArg = union(ScalingType) {
     max: []const u8,
 };
 
+// Internal Information
 const ScalingTypeInfoMax = struct {
     str: []const u8,
 
     max_ascent: u31,
     max_descent: u31,
+
+    last_calculated_scale: ?u31,
 };
 
 const ScalingTypeInfo = union(ScalingType) {
@@ -36,9 +39,9 @@ const ScalingTypeInfo = union(ScalingType) {
 text: TextArray,
 
 text_first_diff: ?MaxTextLenInt = null,
+last_calculated_width: ?u31 = null,
 
 text_color: Color,
-outline_color: Color,
 background_color: Color,
 
 padding_north: u16,
@@ -50,45 +53,28 @@ scaling: ScalingTypeInfo,
 
 widget: Widget,
 
-pub fn drawWidget(widget: *Widget, draw_context: *const DrawContext) !void {
+pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     const self: *TextBox = @fieldParentPtr("widget", widget);
 
     self.draw(draw_context);
 }
 
-pub fn draw(self: *TextBox, draw_context: *const DrawContext) void {
+pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
     const area = self.widget.area;
 
-    var render_text_idx: ?MaxTextLenInt = null;
+    self.setFontSize();
 
     const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
-    if (full_redraw) {
-        log.debug("area: {}", .{area});
-        area.drawArea(draw_context, self.background_color);
-
-        area.drawOutline(draw_context, self.outline_color);
-
-        //const area_used = Rect{
-        //    .x = area.x + self.padding_west,
-        //    .y = area.y + self.padding_north,
-        //    .width = area.width - self.padding_east - self.padding_west,
-        //    .height = area.height - self.padding_south - self.padding_north,
-        //};
-        //area.drawOutline(draw_context, self.outline_color);
-        //area_used.drawOutline(draw_context, colors.muted);
-
-        self.setFontSize(draw_context);
-
-        render_text_idx = 0;
-    } else if (self.text_first_diff) |first_diff| {
-        render_text_idx = first_diff;
-    }
+    const render_text_idx: ?MaxTextLenInt = if (full_redraw)
+        0
+    else if (self.text_first_diff) |first_diff|
+        first_diff
+    else
+        null;
 
     if (render_text_idx) |text_idx| {
         // the leftmost point the glyph should draw
         var pen_x = @as(u63, area.x) << 6;
-
-        log.debug("area y: {}, ascender: {}, descender: {}", .{ area.y, freetype_context.font_face.*.ascender, freetype_context.font_face.*.descender });
 
         // sets the Y pen to the glyph's origin (bottom left-ish)
         const pen_y = (area.y << 6) + switch (self.scaling) {
@@ -96,46 +82,42 @@ pub fn draw(self: *TextBox, draw_context: *const DrawContext) void {
             .max => |max_info| ((area.height << 6) - max_info.max_descent) - (self.padding_south << 6) - (1 << 6), // needs the - 1 so that it is more centered.
         };
 
-        //{ // draw pen line
-        //    const pen_row = draw_context.screen[(pen_y >> 6) * draw_context.window_area.width ..][0..area.width];
-        //    @memset(pen_row, colors.hl_high);
-        //}
+        var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
+        for (0..text_idx) |_| {
+            const utf8_char = utf8_iter.nextCodepointSlice().?;
+            const glyph = freetype_context.loadChar(utf8_char, .default);
 
-        var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = text_idx };
+            pen_x += @intCast(glyph.*.advance.x);
+        }
+
+        assert(utf8_iter.i == text_idx);
+
+        const complete_glyph_area = Rect{
+            .x = @intCast(pen_x >> 6),
+            .y = area.y,
+            .width = @intCast(area.width - ((pen_x >> 6) - area.x)),
+            .height = area.height,
+        };
+        area.assertContains(complete_glyph_area);
+
+        // cover up old glyphs drawn.
+        complete_glyph_area.drawArea(draw_context, self.background_color);
+        //complete_glyph_area.drawOutline(draw_context, colors.gold);
+
+        draw_context.damage(complete_glyph_area);
+
         while (utf8_iter.nextCodepointSlice()) |utf8_char| {
-            log.debug("Loading glyph: '{s}'", .{utf8_char});
+            //log.debug("Loading glyph: '{s}'", .{utf8_char});
             const glyph = freetype_context.loadChar(utf8_char, .render);
-            const bitmap = glyph.*.bitmap;
 
             defer pen_x += @intCast(glyph.*.advance.x);
 
-            if (bitmap.rows == 0 or bitmap.width == 0) continue;
-
-            const bitmap_left: u31 = @intCast(glyph.*.bitmap_left);
-            const bitmap_top: u31 = @intCast(glyph.*.bitmap_top);
-
-            //assert(bitmap_left + (pen_x >> 6));
-            log.debug("\tbitmap_top: {}, pen_y: {}, bitmap rows: {}", .{ bitmap_top, pen_y >> 6, bitmap.rows });
-            //assert(bitmap_top <= (pen_y >> 6));
-
-            const glyph_area = Rect{
-                .x = @as(u31, @intCast(pen_x >> 6)) + bitmap_left,
-                .y = @as(u31, @intCast(pen_y >> 6)) -| bitmap_top,
-                .width = @intCast(bitmap.width),
-                .height = @intCast(bitmap.rows),
-            };
-
-            log.debug("\tarea: {}, glyph_area: {}", .{ area, glyph_area });
-            const used_area = area.intersection(glyph_area);
-
-            //assert(std.meta.eql(glyph_area, used_area));
-
-            assert(used_area.width > 0);
-            assert(used_area.height > 0);
-
-            //used_area.drawOutline(draw_context, colors.muted);
-
-            self.drawBitmap(draw_context, glyph_area, bitmap);
+            draw_context.drawBitmap(.{
+                .origin = .{ .x = @intCast(pen_x >> 6), .y = @intCast(pen_y >> 6) },
+                .text_color = self.text_color,
+                .max_area = self.widget.area,
+                .glyph = glyph,
+            });
         }
     }
 
@@ -143,37 +125,14 @@ pub fn draw(self: *TextBox, draw_context: *const DrawContext) void {
     self.text_first_diff = null;
 }
 
-/// Draws a bitmap onto the draw_context's screen in the given glyph_area.
-/// Only draws on the intersection of the glyph_area and the TextBox's area,
-/// so any part of a glyph trailing outside will just be cut off.
-///
-/// returns immediately for zero width or zero height `glyph_area`s
-fn drawBitmap(self: *const TextBox, draw_context: *const DrawContext, glyph_area: Rect, bitmap: anytype) void {
-    if (glyph_area.width == 0 or glyph_area.height == 0) return;
+/// Gets the total width of the textbox.
+/// This only computes it if the position or font size was changed
+/// since last calculation.
+pub fn getWidth(self: *TextBox) u31 {
+    // if it was already calculated and the size hasn't changed, return that.
+    if (self.last_calculated_width) |width| return width;
 
-    const used_area = self.widget.area.intersection(glyph_area);
-
-    const y_start_local = used_area.y - glyph_area.y;
-
-    for (y_start_local..y_start_local + used_area.height) |y_coord_local| {
-        assert(y_coord_local <= glyph_area.height);
-        const bitmap_row = bitmap.buffer[y_coord_local * bitmap.width ..][0..bitmap.width];
-
-        const x_start_local = used_area.x - glyph_area.x;
-
-        for (x_start_local..x_start_local + used_area.width) |x_coord_local| {
-            assert(x_coord_local <= glyph_area.width);
-
-            var color = self.text_color;
-            color.a = bitmap_row[x_coord_local];
-
-            glyph_area.putComposite(draw_context, .{ .x = @intCast(x_coord_local), .y = @intCast(y_coord_local) }, color);
-        }
-    }
-}
-
-pub fn getWidth(self: *TextBox, draw_context: *const DrawContext) u31 {
-    self.setFontSize(draw_context);
+    self.setFontSize();
 
     var width: u31 = 0;
     var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
@@ -181,18 +140,26 @@ pub fn getWidth(self: *TextBox, draw_context: *const DrawContext) u31 {
         const glyph = freetype_context.loadChar(utf8_char, .default);
         width += @intCast(glyph.*.advance.x);
     }
+    const final_width = (width >> 6) + @intFromBool(((width >> 6) << 6) < width);
 
-    return (width >> 6) + @intFromBool(((width >> 6) << 6) < width);
+    self.last_calculated_width = final_width;
+
+    return final_width;
 }
 
-fn setFontSize(self: *TextBox, draw_context: *const DrawContext) void {
+fn setFontSize(self: *TextBox) void {
     const area = self.widget.area;
     const area_height_used = (area.height - self.padding_north) - self.padding_south;
 
     switch (self.scaling) {
-        .normal => freetype_context.setFontPixelSize(&draw_context.output_context, area_height_used, 0),
+        .normal => freetype_context.setFontPixelSize(area_height_used, 0),
         .max => |*max_info| {
-            freetype_context.setFontPixelSize(&draw_context.output_context, area_height_used, 0);
+            if (max_info.last_calculated_scale != null and self.text_first_diff == null and !self.widget.full_redraw) {
+                freetype_context.setFontPixelSize(max_info.last_calculated_scale.?, 0);
+                return;
+            }
+
+            freetype_context.setFontPixelSize(area_height_used, 0);
 
             var utf8_iter = unicode.Utf8Iterator{ .bytes = max_info.str, .i = 0 };
 
@@ -200,7 +167,7 @@ fn setFontSize(self: *TextBox, draw_context: *const DrawContext) void {
             var descent: u63 = 0;
 
             while (utf8_iter.nextCodepointSlice()) |utf8_char| {
-                const glyph = freetype_context.loadChar(utf8_char, .default);
+                const glyph = freetype_context.loadChar(utf8_char, .metrics);
 
                 const height = glyph.*.metrics.height;
                 const y_bearing = glyph.*.metrics.horiBearingY;
@@ -214,30 +181,42 @@ fn setFontSize(self: *TextBox, draw_context: *const DrawContext) void {
 
             const pixel_height = (area_height * area_height) / height;
 
-            log.debug("height: {}, area_height: {}, pixel_height: {}", .{ height, area_height, pixel_height });
+            //log.debug("height: {}, area_height: {}, pixel_height: {}", .{ height, area_height, pixel_height });
 
-            freetype_context.setFontPixelSize(&draw_context.output_context, @intCast(pixel_height >> 6), 0);
+            freetype_context.setFontPixelSize(@intCast(pixel_height >> 6), 0);
 
             max_info.max_ascent = @intCast(ascent);
             max_info.max_descent = @intCast(descent);
+
+            max_info.last_calculated_scale = @intCast(pixel_height >> 6);
         },
     }
 }
 
 /// Only call if the TextBox was create via `new`
-pub fn deinit(widget: *Widget, allocator: Allocator) void {
+pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
     const self: *TextBox = @fieldParentPtr("widget", widget);
-
     allocator.destroy(self);
 }
 
+pub fn setAreaWidget(widget: *Widget, area: Rect) void {
+    const self: *TextBox = @fieldParentPtr("widget", widget);
+    self.setArea(area);
+}
+
+pub fn setArea(self: *TextBox, area: Rect) void {
+    self.widget.area = area;
+    self.widget.full_redraw = true;
+    self.last_calculated_width = null;
+}
+
 pub fn setText(self: *TextBox, text: []const u8) void {
-    const widget = self.widget;
+    const widget = &self.widget;
     assert(text.len <= max_text_len);
 
-    const diff: MaxTextLenInt = @intCast(mem.indexOfDiff(u8, text, self.text) orelse return);
+    const diff: MaxTextLenInt = @intCast(mem.indexOfDiff(u8, text, self.text.slice()) orelse return);
 
-    self.text.resize(text.len);
+    self.text.resize(text.len) catch @panic("");
     @memcpy(self.text.slice()[diff..text.len], text[diff..]);
 
     if (diff == 0) widget.full_redraw = true;
@@ -246,13 +225,13 @@ pub fn setText(self: *TextBox, text: []const u8) void {
     var new_utf8_iter = unicode.Utf8Iterator{ .bytes = text, .i = 0 };
     var idx: MaxTextLenInt = 0;
 
-    while (new_utf8_iter.nextCodePointSlice()) |char_slice| {
-        // TODO: Do testing on this diff thing.
+    while (new_utf8_iter.nextCodepointSlice()) |char_slice| {
         if (idx + char_slice.len > diff) break;
-        idx += char_slice.len;
+        idx += @intCast(char_slice.len);
     }
 
     self.text_first_diff = idx;
+    self.last_calculated_width = null;
 }
 
 pub const NewArgs = struct {
@@ -261,7 +240,6 @@ pub const NewArgs = struct {
     text: []const u8,
 
     text_color: Color,
-    outline_color: Color,
     background_color: Color,
 
     scaling: ScalingTypeArg = .normal,
@@ -294,7 +272,6 @@ pub fn init(args: NewArgs) TextBox {
         .text = TextBox.TextArray.fromSlice(args.text) catch @panic("Text too large for text box."),
 
         .text_color = args.text_color,
-        .outline_color = args.outline_color,
         .background_color = args.background_color,
 
         .scaling = switch (args.scaling) {
@@ -303,6 +280,7 @@ pub fn init(args: NewArgs) TextBox {
                 .str = max_str,
                 .max_ascent = undefined,
                 .max_descent = undefined,
+                .last_calculated_scale = null,
             } },
         },
 
@@ -314,7 +292,8 @@ pub fn init(args: NewArgs) TextBox {
         .widget = .{
             .vtable = &.{
                 .draw = &TextBox.drawWidget,
-                .deinit = &TextBox.deinit,
+                .deinit = &TextBox.deinitWidget,
+                .setArea = &TextBox.setAreaWidget,
             },
             .area = args.area,
         },

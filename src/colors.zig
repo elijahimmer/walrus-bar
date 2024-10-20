@@ -176,6 +176,9 @@ pub const all_colors = struct {
     pub const hl_low: Color = @bitCast(@as(u32, 0xFF21202e));
     pub const hl_med: Color = @bitCast(@as(u32, 0xFF403d52));
     pub const hl_high: Color = @bitCast(@as(u32, 0xFF524f67));
+
+    pub const damage: Color = love;
+    pub const border: Color = foam;
 };
 pub usingnamespace all_colors;
 

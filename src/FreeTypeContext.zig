@@ -15,6 +15,8 @@ pub const Internal = struct {
     freetype_allocator: freetype.FT_MemoryRec_,
     parent_allocator: Allocator,
     alloc_user: freetype_utils.AllocUser,
+
+    fixed_buffer: if (options.freetype_allocator == .@"fixed-buffer") *FixedBufferAllocator else void,
 };
 
 pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
@@ -24,6 +26,14 @@ pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
         const alloc = switch (options.freetype_allocator) {
             .c => std.heap.c_allocator,
             .zig => parent_allocator,
+            .@"fixed-buffer" => fixed_buffer: {
+                var fixed_buffer = try parent_allocator.create(FixedBufferAllocator);
+                global.internal.fixed_buffer = fixed_buffer;
+
+                fixed_buffer.* = FixedBufferAllocator.init(try parent_allocator.alloc(u8, options.freetype_fixed_allocator_len));
+
+                break :fixed_buffer fixed_buffer.allocator();
+            },
         };
 
         break :alloc alloc;
@@ -86,6 +96,9 @@ pub fn deinit_global() void {
     }
 
     global.internal.alloc_user.alloc_list.deinit(global.internal.alloc_user.allocator);
+    if (options.freetype_allocator == .@"fixed-buffer") {
+        global.internal.parent_allocator.free(global.internal.fixed_buffer.buffer);
+    }
 
     global = undefined;
 }
@@ -99,8 +112,6 @@ pub fn setFontSize(self: *const FreeTypeContext, output_context: *const DrawCont
     const height: u32 = output_context.height;
     const width: u32 = output_context.width;
 
-    assert(physical_height > 0);
-    assert(physical_width > 0);
     assert(height > 0);
     assert(width > 0);
 
@@ -118,37 +129,20 @@ pub fn setFontSize(self: *const FreeTypeContext, output_context: *const DrawCont
     freetype_utils.errorAssert(err, "Failed to set font size", .{});
 }
 
-// TODO: Fix this.
-pub fn setFontPixelSize(self: *const FreeTypeContext, output_context: *const DrawContext.OutputContext, width: u32, height: u32) void {
-    // screen size in milimeters
-    const physical_height: u32 = output_context.physical_height;
-    const physical_width: u32 = output_context.physical_width;
-
-    assert(physical_height > 0);
-    assert(physical_width > 0);
+pub fn setFontPixelSize(self: *const FreeTypeContext, width: u32, height: u32) void {
     assert(height > 0 or width > 0);
 
-    // mm to inches, (mm * 5) / 127, convert physical from mm to inches, then take pixel and divide by physical.
-    const hori_dpi = (height * 127) / (physical_height * 5);
-    const vert_dpi = (width * 127) / (physical_width * 5);
-
-    var size_req = freetype.FT_Size_RequestRec{
-        .type = freetype.FT_SIZE_REQUEST_TYPE_REAL_DIM,
-        .width = width << 6,
-        .height = height << 6,
-        .horiResolution = hori_dpi,
-        .vertResolution = vert_dpi,
-    };
-
-    const err = freetype.FT_Request_Size(
+    const err = freetype.FT_Set_Pixel_Sizes(
         self.font_face,
-        &size_req,
+        width,
+        height,
     );
     freetype_utils.errorAssert(err, "Failed to set font size", .{});
 }
 
 pub const loadCharFlags = enum {
     default,
+    metrics,
     render,
 };
 
@@ -164,6 +158,7 @@ pub fn loadChar(self: *const FreeTypeContext, char_slice: []const u8, flag: load
 
     const freetype_flags: i32 = switch (flag) {
         .default => freetype.FT_LOAD_DEFAULT,
+        .metrics => freetype.FT_LOAD_COMPUTE_METRICS,
         .render => freetype.FT_LOAD_RENDER,
     };
 
@@ -176,15 +171,20 @@ pub fn loadChar(self: *const FreeTypeContext, char_slice: []const u8, flag: load
         freetype_utils.errorAssert(err2, "Failed to load replacement glyph!", .{});
     }
 
+    if (flag == .render) assert(self.font_face.*.glyph.*.bitmap.buffer != null);
     return self.font_face.*.glyph;
 }
 
+pub const DrawCharArgs = struct {
+    draw_context: *const DrawContext,
+    origin: Point,
+    color: Color,
+    area: Rect,
+};
 /// Draws the bitmap of the loaded character with
-pub fn drawChar(self: *const FreeTypeContext, draw_context: *const DrawContext, origin: Point, color: Color) void {
+pub fn drawChar(self: *const FreeTypeContext, args: DrawCharArgs) void {
     _ = self;
-    _ = draw_context;
-    _ = origin;
-    _ = color;
+    _ = args;
 }
 
 test global {
@@ -208,6 +208,7 @@ const Config = @import("Config.zig");
 
 const drawing = @import("drawing.zig");
 const Point = drawing.Point;
+const Rect = drawing.Rect;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
@@ -230,5 +231,6 @@ const assert = std.debug.assert;
 const unicode = std.unicode;
 
 const Allocator = mem.Allocator;
+const FixedBufferAllocator = std.heap.FixedBufferAllocator;
 
 const log = std.log.scoped(.FreeTypeContext);
