@@ -2,7 +2,6 @@
 #! nix-shell -i bash -p flamegraph linuxKernel.packages.linux_xanmod_stable.perf
 ## TODO: make this generic perf for whatever kernel they are running.
 
-nix develop --command bash -c "zig build ; exit"
 ./zig-out/bin/walrus-bar &
 let PID=$!
 

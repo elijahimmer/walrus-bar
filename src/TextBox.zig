@@ -147,6 +147,10 @@ pub fn getWidth(self: *TextBox) u31 {
     return final_width;
 }
 
+/// Sets the FreeType font size to the size needed for this text box.
+/// This does some calculation depending on the scaling type.
+///
+/// Assumes the text size is different, and always sets it.
 fn setFontSize(self: *TextBox) void {
     const area = self.widget.area;
     const area_height_used = (area.height - self.padding_north) - self.padding_south;
@@ -154,10 +158,12 @@ fn setFontSize(self: *TextBox) void {
     switch (self.scaling) {
         .normal => freetype_context.setFontPixelSize(area_height_used, 0),
         .max => |*max_info| {
-            if (max_info.last_calculated_scale != null and self.text_first_diff == null and !self.widget.full_redraw) {
+            // if the last_calculated_scale is correct, just use that,
+            if (!self.widget.full_redraw and max_info.last_calculated_scale != null and self.text_first_diff == null) {
                 freetype_context.setFontPixelSize(max_info.last_calculated_scale.?, 0);
                 return;
             }
+            // else, calculate the scale.
 
             freetype_context.setFontPixelSize(area_height_used, 0);
 
