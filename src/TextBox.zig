@@ -3,8 +3,8 @@
 //!
 pub const TextBox = @This();
 
-const MaxTextLenInt = u6;
-const max_text_len = math.maxInt(MaxTextLenInt);
+pub const MaxTextLenInt = u6;
+pub const max_text_len = math.maxInt(MaxTextLenInt);
 pub const TextArray = BoundedArray(u8, max_text_len);
 
 pub const ScalingType = enum {
@@ -16,7 +16,7 @@ pub const ScalingType = enum {
 };
 
 pub const ScalingTypeArg = union(ScalingType) {
-    normal: void,
+    normal,
     /// should live as long as the widget.
     max: []const u8,
 };
@@ -32,7 +32,7 @@ const ScalingTypeInfoMax = struct {
 };
 
 const ScalingTypeInfo = union(ScalingType) {
-    normal: void,
+    normal,
     max: ScalingTypeInfoMax,
 };
 
@@ -216,6 +216,22 @@ pub fn setArea(self: *TextBox, area: Rect) void {
     self.last_calculated_width = null;
 }
 
+pub const SetColorsArgs = struct {
+    background_color: Color,
+    text_color: Color,
+};
+
+pub fn setColors(self: *TextBox, args: SetColorsArgs) void {
+    if (!std.meta.eql(self.background_color, args.background_color)) {
+        self.background_color = args.background_color;
+        self.widget.full_redraw = true;
+    }
+    if (!std.meta.eql(self.text_color, args.text_color)) {
+        self.text_color = args.text_color;
+        self.widget.full_redraw = true;
+    }
+}
+
 pub fn setText(self: *TextBox, text: []const u8) void {
     const widget = &self.widget;
     assert(text.len <= max_text_len);
@@ -267,6 +283,8 @@ pub fn new(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
 }
 
 pub fn init(args: NewArgs) TextBox {
+    assert(unicode.utf8ValidateSlice(args.text));
+
     switch (args.scaling) {
         .normal => {},
         .max => |max_str| {

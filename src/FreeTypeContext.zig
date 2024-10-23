@@ -150,6 +150,10 @@ pub const loadCharFlags = enum {
 pub fn loadChar(self: *const FreeTypeContext, char_slice: []const u8, flag: loadCharFlags) freetype.FT_GlyphSlot {
     assert(char_slice.len > 0);
 
+    if (unicode.utf8ByteSequenceLength(char_slice[0]) catch null) |len| {
+        assert(char_slice.len == len);
+    }
+
     const utf8_char = unicode.utf8Decode(char_slice) catch |err| utf8_char: {
         log.warn("\tFailed to decode character as UTF8 with: {s}", .{@errorName(err)});
 
@@ -177,14 +181,63 @@ pub fn loadChar(self: *const FreeTypeContext, char_slice: []const u8, flag: load
 
 pub const DrawCharArgs = struct {
     draw_context: *const DrawContext,
-    origin: Point,
-    color: Color,
+    text_color: Color,
     area: Rect,
+
+    /// asserts this is a single UTF-8 Character.
+    /// Draw this character.
+    char: []const u8,
+
+    hori_align: Align,
+    vert_align: Align,
+
+    width: WidthOptions,
+
+    pub const WidthOptions = union(enum) {
+        fixed: u31,
+        scaling: *const fn (u31) u31,
+        glyph,
+    };
 };
-/// Draws the bitmap of the loaded character with
-pub fn drawChar(self: *const FreeTypeContext, args: DrawCharArgs) void {
-    _ = self;
-    _ = args;
+
+/// Draw the given character
+/// Returns the width of the max area.
+pub fn drawChar(freetype_context: *const FreeTypeContext, args: DrawCharArgs) void {
+    const glyph = freetype_context.loadChar(args.char, .render);
+
+    const glyph_dims = Point{
+        .x = @intCast(glyph.*.bitmap.width),
+        .y = @intCast(glyph.*.bitmap.rows),
+    };
+
+    var max_glyph_area = Rect{
+        .x = args.area.x,
+        .y = args.area.y,
+        .height = args.area.height,
+        .width = switch (args.width) {
+            .glyph => @intCast(glyph.*.advance.x >> 6),
+            .fixed => |fixed| fixed,
+            .scaling => |scale_func| scale_func(@intCast(glyph.*.advance.x >> 6)),
+        },
+    };
+
+    const glyph_area = max_glyph_area.align_with(glyph_dims, args.hori_align, args.vert_align);
+
+    const glyph_height: u31 = @intCast(glyph.*.metrics.height >> 6);
+    const glyph_upper: u31 = @intCast(glyph.*.metrics.horiBearingY >> 6);
+    const glyph_bitmap_left: u31 = @intCast(glyph.*.bitmap_left);
+
+    const origin = Point{
+        .x = glyph_area.x - glyph_bitmap_left,
+        .y = glyph_area.y + glyph_area.height - (glyph_height - glyph_upper),
+    };
+
+    args.draw_context.drawBitmap(.{
+        .origin = origin,
+        .text_color = args.text_color,
+        .max_area = glyph_area,
+        .glyph = glyph,
+    });
 }
 
 test global {
@@ -207,6 +260,7 @@ const DrawContext = @import("DrawContext.zig");
 const Config = @import("Config.zig");
 
 const drawing = @import("drawing.zig");
+const Align = drawing.Align;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
 

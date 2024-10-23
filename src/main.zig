@@ -56,6 +56,8 @@ pub fn main() !void {
 test {
     std.testing.refAllDecls(@This());
 
+    std.testing.refAllDecls(@import("Workspaces/Workspaces.zig"));
+    std.testing.refAllDecls(@import("Workspaces/hyprland.zig"));
     std.testing.refAllDecls(FreeTypeContext);
     std.testing.refAllDecls(WaylandContext);
     std.testing.refAllDecls(DrawContext);

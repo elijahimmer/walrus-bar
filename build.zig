@@ -11,10 +11,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .single_threaded = true,
     });
 
-    const options = b.addOptions();
     const font = b.addOptions();
 
     const font_path = b.option([]const u8, "font-path", "Path to font to use") orelse "fonts/FiraCodeNerdFontMono-Regular.ttf";
@@ -22,6 +20,7 @@ pub fn build(b: *std.Build) void {
     const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file (maybe larger than 5Mbs)?");
     font.addOption([]const u8, "font_data", font_data);
 
+    const options = b.addOptions();
     const FreeTypeAllocatorOptions = enum { c, zig, @"fixed-buffer" };
     const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .zig;
     options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
@@ -35,11 +34,14 @@ pub fn build(b: *std.Build) void {
     const track_damage = b.option(bool, "track-damage", "Whether to outline damage or not. (default: false)") orelse false;
     options.addOption(bool, "track_damage", track_damage);
 
+    const WorkspacesOptions = enum { hyprland, testing, none };
+    const workspaces_provider = b.option(WorkspacesOptions, "workspaces-provider", "Which compositor the workspaces should be compiled for") orelse .hyprland;
+    options.addOption(WorkspacesOptions, "workspaces_provider", workspaces_provider);
+
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .single_threaded = true,
     });
 
     const clap = b.dependency("clap", .{});

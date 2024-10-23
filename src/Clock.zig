@@ -14,8 +14,12 @@ spacer_char: BoundedArray(u8, 4),
 /// The widget object used for the text box.
 widget: Widget,
 
-pub inline fn timeGlyphScaling(size: u31) u31 {
+inline fn timeGlyphScaling(size: u31) u31 {
     return size * 27 / 20;
+}
+
+inline fn spacerSizeScale(size: u31) u31 {
+    return size * 8 / 10;
 }
 
 /// conversion to draw from the widget vtable
@@ -26,7 +30,9 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
 }
 
 pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
-    const tod = ctime.time(0);
+    assert(self.spacer_char.len > 0);
+
+    const tod = ctime.time(null);
     const localtime = ctime.localtime(&tod);
     assert(localtime != null);
 
@@ -50,55 +56,32 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
     self.seconds_box.draw(draw_context);
 
     if (should_redraw) {
-        freetype_context.setFontPixelSize(self.widget.area.height * 8 / 10, 0);
+        freetype_context.setFontPixelSize(spacerSizeScale(self.widget.area.height), 0);
 
-        const time_glyph = freetype_context.loadChar(self.spacer_char.slice(), .render);
-
-        var time_glyph_area = Rect{
-            .x = 0,
-            .y = 0,
-            .height = @intCast(time_glyph.*.bitmap.rows),
-            .width = @as(u31, @intCast(time_glyph.*.bitmap.width)),
-        };
+        const spacer_width: u31 = self.getSpacerWidth();
 
         var max_time_glyph_area = Rect{
             .x = self.widget.area.x + hours_width,
             .y = self.widget.area.y,
             .height = self.widget.area.height,
-            .width = timeGlyphScaling(@intCast(time_glyph.*.advance.x >> 6)),
+            .width = spacer_width,
         };
 
-        time_glyph_area = max_time_glyph_area.center(time_glyph_area);
+        for (0..2) |_| {
+            freetype_context.drawChar(.{
+                .draw_context = draw_context,
+                .text_color = self.spacer_color,
+                .area = max_time_glyph_area,
 
-        const time_glyph_height: u31 = @intCast(time_glyph.*.metrics.height >> 6);
-        const time_glyph_upper: u31 = @intCast(time_glyph.*.metrics.horiBearingY >> 6);
-        const time_glyph_bitmap_left: u31 = @intCast(time_glyph.*.bitmap_left);
+                .char = self.spacer_char.slice(),
+                .width = .{ .fixed = spacer_width },
 
-        var origin = Point{
-            .x = time_glyph_area.x - time_glyph_bitmap_left,
-            .y = time_glyph_area.y + time_glyph_area.height - (time_glyph_height - time_glyph_upper),
-        };
+                .hori_align = .center,
+                .vert_align = .center,
+            });
 
-        max_time_glyph_area.drawArea(draw_context, self.background_color);
-        draw_context.drawBitmap(.{
-            .origin = origin,
-            .text_color = self.spacer_color,
-            .max_area = time_glyph_area,
-            .glyph = time_glyph,
-        });
-
-        max_time_glyph_area.x += time_glyph_area.width + (max_time_glyph_area.width - time_glyph_area.width) + minutes_width;
-        time_glyph_area = max_time_glyph_area.center(time_glyph_area);
-
-        origin.x = time_glyph_area.x - time_glyph_bitmap_left;
-
-        max_time_glyph_area.drawArea(draw_context, self.background_color);
-        draw_context.drawBitmap(.{
-            .origin = origin,
-            .text_color = self.spacer_color,
-            .max_area = time_glyph_area,
-            .glyph = time_glyph,
-        });
+            max_time_glyph_area.x += spacer_width + minutes_width;
+        }
     }
 }
 
@@ -124,7 +107,7 @@ pub fn getWidth(self: *Clock) u31 {
 }
 
 fn getSpacerWidth(self: *Clock) u31 {
-    freetype_context.setFontPixelSize(0, self.widget.area.height * 8 / 10);
+    freetype_context.setFontPixelSize(0, spacerSizeScale(self.widget.area.height));
     const glyph = freetype_context.loadChar(self.spacer_char.slice(), .default);
     return timeGlyphScaling(@intCast(glyph.*.advance.x >> 6));
 }
@@ -195,7 +178,7 @@ pub const NewArgs = struct {
     padding_west: ?u16 = null,
 };
 
-pub fn new(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
+pub fn newWidget(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
     const clock = try allocator.create(TextBox);
 
     clock.* = Clock.init(args);
@@ -207,13 +190,30 @@ pub fn init(args: NewArgs) Clock {
     assert(args.spacer_char.len > 0);
     assert(unicode.utf8ValidateSlice(args.spacer_char));
 
-    const spacer_char_sequence_len = unicode.utf8ByteSequenceLength(args.spacer_char[0]) catch @panic("Space Char start with invalid UTF-8 Byte.");
+    const spacer_char_sequence_len = unicode.utf8ByteSequenceLength(args.spacer_char[0]) catch {
+        @panic("Space Char start with invalid UTF-8 Byte.");
+    };
     assert(spacer_char_sequence_len == args.spacer_char.len);
 
+    const default_text_box = TextBox.init(.{
+        .text = &.{ '0', '0' },
+        .text_color = args.text_color,
+        .background_color = args.background_color,
+
+        // area undefined because the self.setArea() will set it.
+        .area = undefined,
+
+        // center the text to be more central
+        .padding_north = @intCast(args.area.height / 10),
+
+        // all of the characters a clock would display
+        .scaling = .{ .max = "1234567890" },
+    });
+
     var self = Clock{
-        .hours_box = undefined,
-        .minutes_box = undefined,
-        .seconds_box = undefined,
+        .hours_box = default_text_box,
+        .minutes_box = default_text_box,
+        .seconds_box = default_text_box,
 
         .background_color = args.background_color,
         .spacer_color = args.spacer_color,
@@ -230,21 +230,6 @@ pub fn init(args: NewArgs) Clock {
             .area = args.area,
         },
     };
-
-    self.hours_box = TextBox.init(.{
-        .text = &.{ '0', '0' },
-        .text_color = args.text_color,
-        .background_color = args.background_color,
-
-        .area = undefined,
-
-        .padding = @intCast(args.area.height / 10),
-
-        .scaling = .{ .max = "1234567890" },
-    });
-
-    self.minutes_box = self.hours_box;
-    self.seconds_box = self.hours_box;
 
     self.setArea(args.area);
 

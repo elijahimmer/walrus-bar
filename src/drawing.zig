@@ -48,15 +48,33 @@ pub const Rect = struct {
         assert(self.y + self.height >= point.y);
     }
 
-    /// Returns a intersecting rectangle. Asserts they actually intersect.
-    pub fn intersection(self: Rect, other: Rect) Rect {
+    /// returns the X and Y coordinates of the Rect
+    pub fn origin(self: Rect) Point {
+        return .{
+            .x = self.x,
+            .y = self.y,
+        };
+    }
+
+    /// returns the Width and Height dims of the Rect
+    pub fn dims(self: Rect) Point {
+        return .{
+            .x = self.width,
+            .y = self.height,
+        };
+    }
+
+    /// Returns a intersecting rectangle, null if they don't intersect.
+    /// Their width and height will be greater zero.
+    pub fn intersection(self: Rect, other: Rect) ?Rect {
         const x_start = @max(self.x, other.x);
         const y_start = @max(self.y, other.y);
         const x_end = @min(self.x + self.width, other.x + other.width);
         const y_end = @min(self.y + self.height, other.y + other.height);
 
-        assert(x_start <= x_end); // make sure they actually intersect
-        assert(y_start <= y_end); // make sure they actually intersect
+        // they don't actually intersect
+        // TODO: Check if this should be `>` or `>=`
+        if (x_start >= x_end or y_start >= y_end) return null;
 
         return .{
             .x = x_start,
@@ -82,15 +100,32 @@ pub const Rect = struct {
     }
 
     /// Center inner box in self. Asserts self is larger than inner
-    pub fn center(self: Rect, inner: Rect) Rect {
-        assert(self.width >= inner.width);
-        assert(self.height >= inner.height);
+    pub fn center(self: Rect, inner: Point) Rect {
+        return self.align_with(inner, .center, .center);
+    }
+
+    /// Inner is the width and height of the returned Rect.
+    pub fn align_with(self: Rect, inner: Point, hori_align: Align, vert_align: Align) Rect {
+        assert(self.width >= inner.x);
+        assert(self.height >= inner.y);
+
+        const new_x = switch (hori_align) {
+            .start => self.x,
+            .end => self.x + self.width - inner.x,
+            .center => self.x + (self.width - inner.x) / 2,
+        };
+
+        const new_y = switch (vert_align) {
+            .start => self.y,
+            .end => self.y + self.height - inner.y,
+            .center => self.y + (self.height - inner.y) / 2,
+        };
 
         return .{
-            .x = self.x + (self.width - inner.width) / 2,
-            .y = self.y + (self.height - inner.height) / 2,
-            .width = inner.width,
-            .height = inner.height,
+            .x = new_x,
+            .y = new_y,
+            .width = inner.x,
+            .height = inner.y,
         };
     }
 
@@ -100,17 +135,18 @@ pub const Rect = struct {
 
         const x_max = self.x + self.width;
         const y_max = self.y + self.height;
-        const width = draw_context.window_area.width;
+        const window_width = draw_context.window_area.width;
 
         for (y_min..y_max) |y_coord| {
             for (x_min..x_max) |x_coord| {
-                draw_context.window_area.assertContainsPoint(.{ .x = @intCast(x_coord), .y = @intCast(y_coord) });
-                draw_context.screen[y_coord * width + x_coord] = color;
+                draw_context.current_area.assertContainsPoint(.{ .x = @intCast(x_coord), .y = @intCast(y_coord) });
+                draw_context.screen[y_coord * window_width + x_coord] = color;
             }
         }
     }
 
     pub fn damageArea(self: Rect, draw_context: *const DrawContext) void {
+        draw_context.current_area.assertContains(self);
         draw_context.surface.?.damageBuffer(self.x, self.y, self.width, self.height);
     }
 
@@ -120,20 +156,20 @@ pub const Rect = struct {
 
         const x_max = self.x + self.width;
         const y_max = self.y + self.height;
-        const width = draw_context.window_area.width;
-        const height = draw_context.window_area.height;
+        const window_width = draw_context.window_area.width;
+        const window_height = draw_context.window_area.height;
 
-        assert(width >= x_max);
-        assert(height >= y_max);
+        assert(window_width >= x_max);
+        assert(window_height >= y_max);
 
         for (y_min..y_max) |y_coord| {
-            draw_context.screen[y_coord * width + x_min] = color;
-            draw_context.screen[y_coord * width + x_max - 1] = color;
+            draw_context.screen[y_coord * window_width + x_min] = color;
+            draw_context.screen[y_coord * window_width + x_max - 1] = color;
         }
 
         for (x_min..x_max) |x_coord| {
-            draw_context.screen[y_min * width + x_coord] = color;
-            draw_context.screen[(y_max - 1) * width + x_coord] = color;
+            draw_context.screen[y_min * window_width + x_coord] = color;
+            draw_context.screen[(y_max - 1) * window_width + x_coord] = color;
         }
     }
 
@@ -148,10 +184,10 @@ pub const Rect = struct {
         const x_coord = self.x + area_local_point.x;
         const y_coord = self.y + area_local_point.y;
 
-        const width = draw_context.window_area.width;
+        const window_width = draw_context.window_area.width;
 
         draw_context.window_area.assertContainsPoint(.{ .x = x_coord, .y = y_coord });
-        draw_context.screen[y_coord * width + x_coord] = color;
+        draw_context.screen[y_coord * window_width + x_coord] = color;
     }
 
     pub fn putComposite(
@@ -163,15 +199,15 @@ pub const Rect = struct {
         const x_coord = self.x + area_local_point.x;
         const y_coord = self.y + area_local_point.y;
 
-        const width = draw_context.window_area.width;
+        const window_width = draw_context.window_area.width;
 
-        draw_context.window_area.assertContainsPoint(.{ .x = x_coord, .y = y_coord });
+        draw_context.current_area.assertContainsPoint(.{ .x = x_coord, .y = y_coord });
 
-        const base_color = draw_context.screen[y_coord * width + x_coord];
+        const base_color = draw_context.screen[y_coord * window_width + x_coord];
 
         const new_color = colors.composite(base_color, color);
 
-        draw_context.screen[y_coord * width + x_coord] = new_color;
+        draw_context.screen[y_coord * window_width + x_coord] = new_color;
     }
 };
 

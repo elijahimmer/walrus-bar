@@ -12,7 +12,7 @@ frame_callback: ?*wl.Callback = null,
 
 screen: []Color = undefined,
 
-//tmp_screen: [][]Color = undefined,
+current_area: Rect = undefined,
 
 window_area: Rect = .{
     .x = 0,
@@ -27,7 +27,7 @@ damage_prev: DamageList = damage_list_init,
 has_started: bool = false,
 full_redraw: bool = true,
 
-widget_left: ?*Widget = null,
+widget_left: ?Workspaces = null,
 widget_center: ?Clock = null,
 widget_right: ?*Widget = null,
 
@@ -50,6 +50,8 @@ pub const OutputContext = struct {
 };
 
 pub fn damage(draw_context: *DrawContext, area: Rect) void {
+    draw_context.current_area.assertContains(area);
+
     if (options.track_damage) {
         draw_context.damage_list.append(area) catch @panic("the Damage list is full, increase list size.");
     } else {
@@ -77,7 +79,7 @@ pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
     else
         log.debug("Output id #{} was deinited", .{draw_context.output_context.id});
 
-    if (draw_context.widget_left) |widget_left| widget_left.deinit(allocator);
+    if (draw_context.widget_left) |*widget_left| widget_left.deinit();
     if (draw_context.widget_right) |widget_right| widget_right.deinit(allocator);
 
     if (draw_context.shm_buffer) |shm_buffer| shm_buffer.destroy();
@@ -176,23 +178,7 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
     assert(draw_context.shm_buffer != null);
     assert(draw_context.shm_fd != null);
 
-    draw_context.widget_center = Clock.init(.{
-        .text_color = colors.rose,
-        .spacer_color = colors.pine,
-        .background_color = colors.surface,
-
-        .area = .{
-            .x = 0,
-            .y = 0,
-            .width = 1000,
-            .height = draw_context.window_area.height,
-        },
-    });
-
-    var center_area = draw_context.widget_center.?.widget.area;
-    center_area.width = draw_context.widget_center.?.getWidth();
-
-    draw_context.widget_center.?.setArea(draw_context.window_area.center(center_area));
+    draw_context.initWidgets();
 
     draw_context.draw(wayland_context);
     draw_context.surface.?.attach(draw_context.shm_buffer.?, 0, 0);
@@ -202,6 +188,57 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
     draw_context.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
 
     draw_context.surface.?.commit();
+}
+
+fn initWidgets(draw_context: *DrawContext) void {
+    { // clock
+        var clock = Clock.init(.{
+            .text_color = colors.rose,
+            .spacer_color = colors.pine,
+            .background_color = colors.surface,
+
+            .area = .{
+                .x = 0,
+                .y = 0,
+                .width = 1000,
+                .height = draw_context.window_area.height,
+            },
+        });
+
+        var center_area = clock.widget.area;
+        center_area.width = clock.getWidth();
+
+        clock.setArea(draw_context.window_area.center(center_area.dims()));
+
+        draw_context.widget_center = clock;
+    }
+
+    workspaces: { // workspaces
+        var workspaces = Workspaces.init(.{
+            .background_color = colors.surface,
+            .text_color = colors.rose,
+
+            .active_workspace_background = colors.pine,
+            .active_workspace_text = colors.gold,
+
+            .area = .{
+                .x = 0,
+                .y = 0,
+                .width = 1000,
+                .height = draw_context.window_area.height,
+            },
+        }) catch |err| {
+            log.warn("Failed to initialize Workspace with: {s}", .{@errorName(err)});
+            break :workspaces;
+        };
+
+        var left_area = workspaces.widget.area;
+        left_area.width = workspaces.getWidth();
+
+        workspaces.setArea(left_area);
+
+        draw_context.widget_left = workspaces;
+    }
 }
 
 pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_context: *WaylandContext) void {
@@ -359,18 +396,21 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
     _ = wayland_context;
 
     inline for (.{
-        "widget_left",
         "widget_right",
     }) |name| {
         if (@field(draw_context, name)) |w| {
+            draw_context.current_area = w.area;
             w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
             w.full_redraw = false;
         }
     }
 
-    if (draw_context.widget_center) |*w| {
-        w.draw(draw_context) catch |err| log.warn("Drawing of 'widget_center' failed with: '{s}'", .{@errorName(err)});
-        w.widget.full_redraw = false;
+    inline for (.{ "widget_left", "widget_center" }) |name| {
+        if (@field(draw_context, name)) |*w| {
+            draw_context.current_area = w.widget.area;
+            w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
+            w.widget.full_redraw = false;
+        }
     }
 
     if (options.track_damage) {
@@ -378,6 +418,8 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
             damage_last.drawOutline(draw_context, config.background_color);
             damage_last.damageOutline(draw_context);
         }
+
+        draw_context.current_area = draw_context.window_area;
 
         while (draw_context.damage_list.popOrNull()) |damage_item| {
             draw_context.damage_prev.append(damage_item) catch unreachable;
@@ -402,9 +444,9 @@ pub const DrawBitmapArgs = struct {
 ///
 /// Returns immediately if the bitmap or the glyph's area have a zero height or width.
 pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
+    assert(args.glyph != null and args.glyph.*.bitmap.buffer != null);
     const glyph = args.glyph;
     const bitmap = args.glyph.*.bitmap;
-    assert(bitmap.buffer != null);
 
     if (bitmap.rows == 0 or bitmap.width == 0) return;
 
@@ -420,7 +462,7 @@ pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
 
     if (glyph_area.width == 0 or glyph_area.height == 0) return;
 
-    const used_area = args.max_area.intersection(glyph_area);
+    const used_area = args.max_area.intersection(glyph_area) orelse return;
 
     assert(used_area.width > 0);
     assert(used_area.height > 0);
@@ -458,6 +500,7 @@ const all_colors = colors.all_colors;
 const Config = @import("Config.zig");
 const config = &Config.global;
 
+const Workspaces = @import("Workspaces/Workspaces.zig");
 const Clock = @import("Clock.zig");
 
 const drawing = @import("drawing.zig");

@@ -132,7 +132,7 @@ test "freetype allocator" {
 
     var font_face: freetype.FT_Face = undefined;
 
-    err = freetype.FT_New_Memory_Face(freetype_lib, options.font_data.ptr, options.font_data.len, 0, &font_face);
+    err = freetype.FT_New_Memory_Face(freetype_lib, font.font_data.ptr, font.font_data.len, 0, &font_face);
     try expect(err == 0);
     defer _ = freetype.FT_Done_Face(font_face);
 
@@ -146,6 +146,7 @@ test "freetype allocator" {
 }
 
 const options = @import("options");
+const font = @import("font");
 
 const freetype = @cImport({
     @cInclude("ft2build.h");
