@@ -1,4 +1,6 @@
-const max_failed_reads: usize = 10;
+const max_failed_reads = 10;
+/// Should be more than enough
+const resp_buffer_len = 8196;
 
 pub fn work(state: *WorkspaceState) void {
     log.info("Hyprland Worker Started!", .{});
@@ -15,12 +17,13 @@ pub fn work(state: *WorkspaceState) void {
         log.warn("Failed to set hyprland socket non-blocking with: '{s}'", .{@errorName(err)});
     };
 
-    var resp_buffer: [4096]u8 = undefined;
+    var resp_buffer: [resp_buffer_len]u8 = undefined;
 
     var failed_reads: usize = 0;
 
+    // TODO: Find out which atomic order is best for this :)
     while (state.rc.load(.monotonic) > 0) {
-        defer std.Thread.yield() catch std.time.sleep(0);
+        std.time.sleep(std.time.ns_per_ms * 50);
 
         const read_length = hyprland_socket.read(&resp_buffer) catch |err| {
             if (err == error.WouldBlock) continue;

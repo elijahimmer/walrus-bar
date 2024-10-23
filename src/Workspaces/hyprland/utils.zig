@@ -147,6 +147,8 @@ pub fn getCurrentWorkspaces() !WorkspaceArray {
         }
     }
 
+    mem.sort(WorkspaceID, workspaces.slice(), {}, std.sort.asc(WorkspaceID));
+
     return workspaces;
 }
 

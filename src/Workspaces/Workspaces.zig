@@ -37,6 +37,7 @@ fn setAreaWidget(widget: *Widget, area: Rect) void {
 }
 
 pub fn setArea(self: *Workspaces, area: Rect) void {
+    // TODO: Maybe make this not crash if it is not wide enough
     // Should always be wide enough
     assert(area.height * max_workspace_count <= area.width);
 
