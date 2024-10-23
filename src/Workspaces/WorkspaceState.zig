@@ -27,7 +27,7 @@ active_workspace: WorkspaceID,
 pub fn init(self: *WorkspaceState) !void {
     const rc = self.rc.fetchAdd(1, .acq_rel);
 
-    if (!Impl.available()) return error.ServiceNotRunning;
+    if (!Impl.available()) return error.@"Service Not Found";
 
     if (rc == 0) {
         self.worker_thread = try Thread.spawn(.{}, Impl.work, .{self});

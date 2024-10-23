@@ -20,9 +20,22 @@ pub const Command = union(enum) {
     }
 };
 
+/// returns true if and only if the path exists and the process and access it.
+fn path_exists(path: []const u8) bool {
+    if (!std.fs.path.isAbsolute(path)) return false;
+    _ = std.fs.openDirAbsolute(path, .{}) catch return false;
+    return true;
+}
+
 pub fn hyprlandExists() bool {
-    _ = posix.getenv("XDG_RUNTIME_DIR") orelse return false;
-    _ = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return false;
+    const xdg = posix.getenv("XDG_RUNTIME_DIR") orelse return false;
+
+    if (!path_exists(xdg)) return false;
+
+    const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return false;
+
+    if (his.len == 0) return false;
+
     return true;
 }
 
@@ -41,24 +54,13 @@ pub fn openHyprSocket(socket_type: HyprSocketType) OpenHyprSocketError!Stream {
     const xdg_runtime_dir = posix.getenv("XDG_RUNTIME_DIR") orelse return error.NoXdgRuntimeDir;
     const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return error.NoHyprlandInstanceSignature;
 
-    var path = BoundedArray(u8, 256){};
+    var path = BoundedArray(u8, std.fs.max_path_bytes){};
 
     path.writer().print("{s}/hypr/{s}/{s}", .{ xdg_runtime_dir, his, socket_path }) catch return error.PathTooLong;
 
     const stream = try net.connectUnixSocket(path.slice());
 
     return stream;
-}
-
-/// Send a hyprland command, making a new command socket.
-pub fn sendHyprCommand(
-    /// This is stack allocated, so don't put too much
-    comptime max_response_length: comptime_int,
-    command: Command,
-) !BoundedArray(u8, max_response_length) {
-    const stream = try openHyprSocket(.command);
-
-    return sendHyprCommandTo(max_response_length, stream, command);
 }
 
 /// send a hyprland command to specified socket.
@@ -73,6 +75,17 @@ pub fn sendHyprCommandTo(
     const reader = stream.reader();
 
     return try reader.readBoundedBytes(max_response_length);
+}
+
+/// Send a hyprland command, making a new command socket.
+pub fn sendHyprCommand(
+    /// This is stack allocated, so don't put too much
+    comptime max_response_length: comptime_int,
+    command: Command,
+) !BoundedArray(u8, max_response_length) {
+    const stream = try openHyprSocket(.command);
+
+    return sendHyprCommandTo(max_response_length, stream, command);
 }
 
 test sendHyprCommandTo {
@@ -146,9 +159,7 @@ const mem = std.mem;
 const net = std.net;
 const posix = std.posix;
 
-const assert = std.debug.assert;
 const parseInt = std.fmt.parseInt;
-const ParseIntError = std.fmt.ParseIntError;
 
 const Stream = net.Stream;
 const Allocator = std.mem.Allocator;
