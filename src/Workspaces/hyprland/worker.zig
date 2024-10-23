@@ -111,13 +111,7 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
         state.rwlock.lock();
         defer state.rwlock.unlock();
 
-        const new_wksp_idx = for (state.workspaces.slice(), 0..) |wksp, idx| {
-            if (wksp >= new_wksp) {
-                break idx;
-            }
-        } else new_wksp_idx: {
-            break :new_wksp_idx state.workspaces.len;
-        };
+        const new_wksp_idx = sort.lowerBound(WorkspaceID, new_wksp, state.workspaces.slice(), {}, sort.asc(WorkspaceID));
 
         // if there is a overflow, just continue and don't add it
         state.workspaces.insert(new_wksp_idx, new_wksp) catch {};
@@ -132,17 +126,41 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
         state.rwlock.lock();
         defer state.rwlock.unlock();
 
-        const wksp_idx = for (state.workspaces.slice(), 0..) |wksp, idx| {
-            if (wksp == wksp_to_destroy) {
-                break idx;
-            }
-        } else wksp_idx: {
-            break :wksp_idx state.workspaces.len;
-        };
+        const wksp_idx = sort.binarySearch(
+            WorkspaceID,
+            wksp_to_destroy,
+            state.workspaces.slice(),
+            {},
+            struct {
+                pub fn order(_: void, key: WorkspaceID, mid: WorkspaceID) math.Order {
+                    return math.order(key, mid);
+                }
+            }.order,
+        );
 
-        _ = state.workspaces.orderedRemove(wksp_idx);
+        if (wksp_idx) |idx| {
+            const removed = state.workspaces.orderedRemove(idx);
+            assert(removed == wksp_to_destroy);
+        } else {
+            log.warn("Hyprland destroyed non-existent workspace: {}", .{wksp_to_destroy});
+        }
     } else {
         //log.debug("unknown hyprland event: '{s}'>>'{s}'", .{ event, value });
+    }
+}
+
+pub fn validateState(state: *WorkspaceState) void {
+    if (state.workspaces.len == 0) return;
+
+    var last_wksp = state.workspaces.slice()[0] - 1;
+    for (state.workspaces.slice(), 0..) |wksp, idx| {
+        assert(wksp > last_wksp);
+        last_wksp = wksp;
+
+        for (state.workspaces.slice(), 0..) |wksp_2, idx_2| {
+            if (idx == idx_2) continue;
+            assert(wksp != wksp_2);
+        }
     }
 }
 
@@ -159,6 +177,8 @@ const WorkspaceID = WorkspaceState.WorkspaceID;
 const std = @import("std");
 const mem = std.mem;
 const fmt = std.fmt;
+const sort = std.sort;
+const math = std.math;
 const posix = std.posix;
 
 const parseInt = fmt.parseInt;

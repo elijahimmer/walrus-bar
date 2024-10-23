@@ -34,7 +34,7 @@ pub fn hyprlandExists() bool {
 
     const his = posix.getenv("HYPRLAND_INSTANCE_SIGNATURE") orelse return false;
 
-    if (his.len == 0) return false;
+    if (mem.trim(u8, his, &ascii.whitespace).len == 0) return false;
 
     return true;
 }
@@ -88,7 +88,7 @@ pub fn sendHyprCommand(
     return sendHyprCommandTo(max_response_length, stream, command);
 }
 
-test sendHyprCommandTo {
+test sendHyprCommand {
     // const expect = std.testing.expect;
     const response = sendHyprCommand(100, .workspaces) catch |err| switch (err) {
         // there is no hyprland instance.
@@ -159,6 +159,7 @@ const WorkspaceArray = WorkspaceState.WorkspaceArray;
 const std = @import("std");
 const mem = std.mem;
 const net = std.net;
+const ascii = std.ascii;
 const posix = std.posix;
 
 const parseInt = std.fmt.parseInt;
