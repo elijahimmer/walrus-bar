@@ -62,17 +62,15 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
 pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
     const area = self.widget.area;
 
-    self.setFontSize();
-
     const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
     const render_text_idx: ?MaxTextLenInt = if (full_redraw)
         0
-    else if (self.text_first_diff) |first_diff|
-        first_diff
     else
-        null;
+        self.text_first_diff;
 
     if (render_text_idx) |text_idx| {
+        const font_size = self.getFontSize();
+
         // the leftmost point the glyph should draw
         var pen_x = @as(u63, area.x) << 6;
 
@@ -84,10 +82,10 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
 
         var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
         for (0..text_idx) |_| {
-            const utf8_char = utf8_iter.nextCodepointSlice().?;
-            const glyph = freetype_context.loadChar(utf8_char, .default);
+            const utf8_char = utf8_iter.nextCodepoint().?;
+            const glyph = freetype_context.loadChar(utf8_char, font_size, .default);
 
-            pen_x += @intCast(glyph.*.advance.x);
+            pen_x += glyph.advance_x;
         }
 
         assert(utf8_iter.i == text_idx);
@@ -106,11 +104,8 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
 
         draw_context.damage(complete_glyph_area);
 
-        while (utf8_iter.nextCodepointSlice()) |utf8_char| {
-            //log.debug("Loading glyph: '{s}'", .{utf8_char});
-            const glyph = freetype_context.loadChar(utf8_char, .render);
-
-            defer pen_x += @intCast(glyph.*.advance.x);
+        while (utf8_iter.nextCodepoint()) |utf8_char| {
+            const glyph = freetype_context.loadChar(utf8_char, font_size, .render);
 
             draw_context.drawBitmap(.{
                 .origin = .{ .x = @intCast(pen_x >> 6), .y = @intCast(pen_y >> 6) },
@@ -118,6 +113,8 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
                 .max_area = self.widget.area,
                 .glyph = glyph,
             });
+
+            pen_x += glyph.advance_x;
         }
     }
 
@@ -132,13 +129,13 @@ pub fn getWidth(self: *TextBox) u31 {
     // if it was already calculated and the size hasn't changed, return that.
     if (self.last_calculated_width) |width| return width;
 
-    self.setFontSize();
+    const font_size = self.getFontSize();
 
     var width: u31 = 0;
     var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
-    while (utf8_iter.nextCodepointSlice()) |utf8_char| {
-        const glyph = freetype_context.loadChar(utf8_char, .default);
-        width += @intCast(glyph.*.advance.x);
+    while (utf8_iter.nextCodepoint()) |utf8_char| {
+        const glyph = freetype_context.loadChar(utf8_char, font_size, .default);
+        width += glyph.advance_x;
     }
     const final_width = (width >> 6) + @intFromBool(((width >> 6) << 6) < width);
 
@@ -151,29 +148,26 @@ pub fn getWidth(self: *TextBox) u31 {
 /// This does some calculation depending on the scaling type.
 ///
 /// Assumes the text size is different, and always sets it.
-fn setFontSize(self: *TextBox) void {
+fn getFontSize(self: *TextBox) u32 {
     const area = self.widget.area;
     const area_height_used = (area.height - self.padding_north) - self.padding_south;
 
     switch (self.scaling) {
-        .normal => freetype_context.setFontPixelSize(area_height_used, 0),
+        .normal => return area_height_used,
         .max => |*max_info| {
             // if the last_calculated_scale is correct, just use that,
             if (!self.widget.full_redraw and max_info.last_calculated_scale != null and self.text_first_diff == null) {
-                freetype_context.setFontPixelSize(max_info.last_calculated_scale.?, 0);
-                return;
+                return max_info.last_calculated_scale.?;
             }
             // else, calculate the scale.
-
-            freetype_context.setFontPixelSize(area_height_used, 0);
 
             var utf8_iter = unicode.Utf8Iterator{ .bytes = max_info.str, .i = 0 };
 
             var ascent: u63 = 0;
             var descent: u63 = 0;
 
-            while (utf8_iter.nextCodepointSlice()) |utf8_char| {
-                const glyph = freetype_context.loadChar(utf8_char, .metrics);
+            while (utf8_iter.nextCodepoint()) |utf8_char| {
+                const glyph = freetype_context.loadChar(utf8_char, area_height_used, .metrics);
 
                 const height = glyph.*.metrics.height;
                 const y_bearing = glyph.*.metrics.horiBearingY;
@@ -189,12 +183,12 @@ fn setFontSize(self: *TextBox) void {
 
             //log.debug("height: {}, area_height: {}, pixel_height: {}", .{ height, area_height, pixel_height });
 
-            freetype_context.setFontPixelSize(@intCast(pixel_height >> 6), 0);
-
             max_info.max_ascent = @intCast(ascent);
             max_info.max_descent = @intCast(descent);
 
             max_info.last_calculated_scale = @intCast(pixel_height >> 6);
+
+            return @intCast(pixel_height >> 6);
         },
     }
 }

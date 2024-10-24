@@ -13,7 +13,7 @@ pub fn main() !void {
 
     // don't use logging allocator as you can enable it separately.
     try FreeTypeContext.init_global(gpa.allocator());
-    defer FreeTypeContext.deinit_global();
+    defer FreeTypeContext.global.deinit();
 
     // start wayland connection.
     const display = try wl.Display.connect(null);

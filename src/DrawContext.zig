@@ -433,7 +433,7 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
 }
 
 pub const DrawBitmapArgs = struct {
-    glyph: freetype.FT_GlyphSlot,
+    glyph: *FreeTypeContext.Glyph,
     text_color: Color,
     max_area: Rect,
     origin: Point,
@@ -444,20 +444,16 @@ pub const DrawBitmapArgs = struct {
 ///
 /// Returns immediately if the bitmap or the glyph's area have a zero height or width.
 pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
-    assert(args.glyph != null and args.glyph.*.bitmap.buffer != null);
+    assert(args.glyph.bitmap_buffer != null);
     const glyph = args.glyph;
-    const bitmap = args.glyph.*.bitmap;
 
-    if (bitmap.rows == 0 or bitmap.width == 0) return;
-
-    const bitmap_left: u31 = @intCast(glyph.*.bitmap_left);
-    const bitmap_top: u31 = @intCast(glyph.*.bitmap_top);
+    if (glyph.bitmap_rows == 0 or glyph.bitmap_width == 0) return;
 
     const glyph_area = Rect{
-        .x = args.origin.x + bitmap_left,
-        .y = args.origin.y -| bitmap_top,
-        .width = @intCast(bitmap.width),
-        .height = @intCast(bitmap.rows),
+        .x = args.origin.x + glyph.bitmap_left,
+        .y = args.origin.y -| glyph.bitmap_top,
+        .width = glyph.bitmap_width,
+        .height = glyph.bitmap_rows,
     };
 
     if (glyph_area.width == 0 or glyph_area.height == 0) return;
@@ -471,7 +467,7 @@ pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
 
     for (y_start_local..y_start_local + used_area.height) |y_coord_local| {
         assert(y_coord_local <= glyph_area.height);
-        const bitmap_row = bitmap.buffer[y_coord_local * bitmap.width ..][0..bitmap.width];
+        const bitmap_row = glyph.bitmap_buffer.?[y_coord_local * glyph.bitmap_width ..][0..glyph.bitmap_width];
 
         const x_start_local = used_area.x - glyph_area.x;
 

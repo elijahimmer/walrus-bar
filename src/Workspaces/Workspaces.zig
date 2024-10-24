@@ -3,7 +3,7 @@ pub const Workspaces = @This();
 pub const Workspace = struct {
     area: Rect,
     id: WorkspaceID,
-    char: []const u8,
+    char: u21,
 
     should_redraw: bool = true,
 };
@@ -66,7 +66,7 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
         self.widget.area.drawArea(draw_context, self.background_color);
     }
 
-    freetype_context.setFontPixelSize(0, fontScalingFactor(self.widget.area.height));
+    const font_size = fontScalingFactor(self.widget.area.height);
 
     for (self.workspaces.slice()) |*wksp| {
         if (full_redraw or wksp.should_redraw) {
@@ -85,6 +85,7 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
                 .area = wksp.area,
                 .width = .{ .fixed = wksp.area.width },
                 .char = wksp.char,
+                .font_size = font_size,
 
                 .hori_align = .center,
                 .vert_align = .center,
@@ -101,11 +102,10 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
     if (self.fill_background and !self.widget.full_redraw) {
         var area = self.widget.area;
 
-        const start = if (self.workspaces.len > 0) start: {
-            const last_workspace = self.workspaces.slice()[self.workspaces.len - 1];
-
-            break :start last_workspace.area.x + last_workspace.area.width;
-        } else 0;
+        const start = if (self.workspaces.len > 0)
+            self.workspaces.len * area.height
+        else
+            0;
 
         assert(start < area.width);
 
@@ -120,18 +120,18 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
     self.widget.full_redraw = false;
 }
 
-fn getWorkspaceSymbol(self: *const Workspaces, idx: WorkspaceID) []const u8 {
+fn getWorkspaceSymbol(self: *const Workspaces, idx: WorkspaceID) u21 {
     var count: WorkspaceIndex = 1;
 
     var symbol_iter = unicode.Utf8Iterator{ .bytes = self.workspaces_symbols, .i = 0 };
 
-    while (symbol_iter.nextCodepointSlice()) |slice| {
-        if (count == idx) return slice;
+    while (symbol_iter.nextCodepoint()) |code_point| {
+        if (count == idx) return code_point;
 
         count += 1;
     }
 
-    return "?"; // unknown workspace
+    return '?'; // unknown workspace
 }
 
 /// TODO: Gracefully handle too many workspaces
@@ -155,7 +155,7 @@ fn updateState(self: *Workspaces) !void {
 
                 self.workspaces.appendAssumeCapacity(.{
                     .area = workspace_area,
-                    .char = "",
+                    .char = 0,
                     .id = undefined,
                 });
 
@@ -171,7 +171,7 @@ fn updateState(self: *Workspaces) !void {
         .eq => {},
     }
 
-    for (workspace_state.workspaces.slice(), self.workspaces.slice()) |wk_id, *wksp| {
+    for (workspace_state.workspaces.constSlice(), self.workspaces.slice()) |wk_id, *wksp| {
         wksp.id = wk_id;
         const wk_symbol = self.getWorkspaceSymbol(wk_id);
 
@@ -181,7 +181,7 @@ fn updateState(self: *Workspaces) !void {
             wksp.should_redraw = true;
         }
 
-        if (!std.mem.eql(u8, wksp.char, wk_symbol)) {
+        if (wksp.char != wk_symbol) {
             wksp.char = wk_symbol;
             wksp.should_redraw = true;
         }

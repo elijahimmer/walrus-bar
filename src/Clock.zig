@@ -9,7 +9,7 @@ spacer_color: Color,
 
 /// The character put between the hours and the minutes and the minutes and the seconds.
 /// This should only be a single UTF-8 character.
-spacer_char: BoundedArray(u8, 4),
+spacer_char: u21,
 
 /// The widget object used for the text box.
 widget: Widget,
@@ -30,8 +30,6 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
 }
 
 pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
-    assert(self.spacer_char.len > 0);
-
     const tod = ctime.time(null);
     const localtime = ctime.localtime(&tod);
     assert(localtime != null);
@@ -45,18 +43,18 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
     }
 
     self.hours_box.setText(&num2Char(@intCast(localtime.*.tm_hour)));
-    const hours_width = self.hours_box.getWidth();
     self.hours_box.draw(draw_context);
+    const hours_width = self.hours_box.getWidth();
 
     self.minutes_box.setText(&num2Char(@intCast(localtime.*.tm_min)));
-    const minutes_width = self.minutes_box.getWidth();
     self.minutes_box.draw(draw_context);
+    const minutes_width = self.minutes_box.getWidth();
 
     self.seconds_box.setText(&num2Char(@intCast(localtime.*.tm_sec)));
     self.seconds_box.draw(draw_context);
 
     if (should_redraw) {
-        freetype_context.setFontPixelSize(spacerSizeScale(self.widget.area.height), 0);
+        const font_size = spacerSizeScale(self.widget.area.height);
 
         const spacer_width: u31 = self.getSpacerWidth();
 
@@ -73,8 +71,9 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
                 .text_color = self.spacer_color,
                 .area = max_time_glyph_area,
 
-                .char = self.spacer_char.slice(),
+                .char = self.spacer_char,
                 .width = .{ .fixed = spacer_width },
+                .font_size = font_size,
 
                 .hori_align = .center,
                 .vert_align = .center,
@@ -107,9 +106,9 @@ pub fn getWidth(self: *Clock) u31 {
 }
 
 fn getSpacerWidth(self: *Clock) u31 {
-    freetype_context.setFontPixelSize(0, spacerSizeScale(self.widget.area.height));
-    const glyph = freetype_context.loadChar(self.spacer_char.slice(), .default);
-    return timeGlyphScaling(@intCast(glyph.*.advance.x >> 6));
+    const font_size = spacerSizeScale(self.widget.area.height);
+    const glyph = freetype_context.loadChar(self.spacer_char, font_size, .default);
+    return timeGlyphScaling(glyph.advance_x >> 6);
 }
 
 pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
@@ -188,12 +187,12 @@ pub fn newWidget(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
 
 pub fn init(args: NewArgs) Clock {
     assert(args.spacer_char.len > 0);
+    assert(args.spacer_char.len <= 4);
     assert(unicode.utf8ValidateSlice(args.spacer_char));
 
-    const spacer_char_sequence_len = unicode.utf8ByteSequenceLength(args.spacer_char[0]) catch {
-        @panic("Space Char start with invalid UTF-8 Byte.");
+    const spacer_char = unicode.utf8Decode(args.spacer_char) catch {
+        @panic("Spacer character isn't valid UTF-8!");
     };
-    assert(spacer_char_sequence_len == args.spacer_char.len);
 
     const default_text_box = TextBox.init(.{
         .text = &.{ '0', '0' },
@@ -218,7 +217,7 @@ pub fn init(args: NewArgs) Clock {
         .background_color = args.background_color,
         .spacer_color = args.spacer_color,
 
-        .spacer_char = BoundedArray(u8, 4).fromSlice(args.spacer_char) catch unreachable,
+        .spacer_char = spacer_char,
 
         .widget = .{
             .vtable = &.{
