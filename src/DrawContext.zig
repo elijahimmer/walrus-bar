@@ -197,6 +197,9 @@ fn initWidgets(draw_context: *DrawContext) void {
             .spacer_color = colors.pine,
             .background_color = colors.surface,
 
+            .padding_north = @intCast(draw_context.window_area.height / 6),
+            .padding_south = @intCast(draw_context.window_area.height / 6),
+
             .area = .{
                 .x = 0,
                 .y = 0,

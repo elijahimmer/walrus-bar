@@ -137,6 +137,8 @@ pub fn getWidth(self: *TextBox) u31 {
         const glyph = freetype_context.loadChar(utf8_char, font_size, .default);
         width += glyph.advance_x;
     }
+
+    // the @intFromBool(...) is to round up the pixel height
     const final_width = (width >> 6) + @intFromBool(((width >> 6) << 6) < width);
 
     self.last_calculated_width = final_width;
@@ -179,16 +181,16 @@ fn getFontSize(self: *TextBox) u32 {
             const height = ascent + descent;
             const area_height = area_height_used << 6;
 
-            const pixel_height = (area_height * area_height) / height;
+            const font_height = (area_height * area_height) / height;
 
             //log.debug("height: {}, area_height: {}, pixel_height: {}", .{ height, area_height, pixel_height });
 
             max_info.max_ascent = @intCast(ascent);
             max_info.max_descent = @intCast(descent);
 
-            max_info.last_calculated_scale = @intCast(pixel_height >> 6);
+            max_info.last_calculated_scale = @intCast(font_height >> 6);
 
-            return @intCast(pixel_height >> 6);
+            return max_info.last_calculated_scale.?;
         },
     }
 }

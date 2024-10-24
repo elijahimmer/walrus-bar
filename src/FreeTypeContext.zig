@@ -287,6 +287,9 @@ pub const DrawCharArgs = struct {
     /// Draw this character.
     char: u21,
 
+    /// Used to debug
+    outline: bool = false,
+
     hori_align: Align,
     vert_align: Align,
 
@@ -336,6 +339,11 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
         .max_area = glyph_area,
         .glyph = glyph,
     });
+
+    if (args.outline) {
+        max_glyph_area.drawOutline(args.draw_context, colors.love);
+        glyph_area.drawOutline(args.draw_context, colors.border);
+    }
 }
 
 test global {

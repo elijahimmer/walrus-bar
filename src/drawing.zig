@@ -15,6 +15,22 @@ pub const Point = struct {
     }
 };
 
+pub const Padding = struct {
+    north: u16,
+    south: u16,
+    east: u16,
+    west: u16,
+
+    pub fn from(args: anytype) Padding {
+        return .{
+            .north = args.padding_north orelse args.padding,
+            .south = args.padding_south orelse args.padding,
+            .east = args.padding_east orelse args.padding,
+            .west = args.padding_west orelse args.padding,
+        };
+    }
+};
+
 pub const Rect = struct {
     x: u31,
     y: u31,
@@ -126,6 +142,15 @@ pub const Rect = struct {
             .y = new_y,
             .width = inner.x,
             .height = inner.y,
+        };
+    }
+
+    pub fn removePadding(self: Rect, padding: Padding) Rect {
+        return .{
+            .x = self.x + padding.west,
+            .y = self.y + padding.north,
+            .width = self.width - padding.west - padding.east,
+            .height = self.height - padding.north - padding.south,
         };
     }
 
