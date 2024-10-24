@@ -197,7 +197,7 @@ pub const NewArgs = struct {
     active_workspace_background: Color,
     active_workspace_text: Color,
 
-    workspaces_symbols: []const u8 = "ΑΒΓΔΕΖΗΘΙΚ",
+    workspaces_symbols: []const u8 = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ",
 
     area: Rect,
 };
