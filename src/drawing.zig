@@ -210,7 +210,7 @@ pub const Rect = struct {
         draw_context.surface.?.damageBuffer(self.x, self.y + self.height, self.width, 1);
     }
 
-    pub fn putPixel(self: Rect, area_local_point: Point, draw_context: *const DrawContext, color: Color) void {
+    pub fn putPixel(self: Rect, draw_context: *const DrawContext, area_local_point: Point, color: Color) void {
         const x_coord = self.x + area_local_point.x;
         const y_coord = self.y + area_local_point.y;
 

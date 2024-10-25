@@ -84,6 +84,8 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
             freetype_context.drawChar(.{
                 .draw_context = draw_context,
 
+                .outline = false,
+
                 .text_color = self.text_color,
 
                 .area = wksp.area,

@@ -96,12 +96,7 @@ pub fn init(args: NewArgs) !Battery {
         .charge_file = charge_file,
         .full_file = full_file,
 
-        .padding = .{
-            .north = args.padding_north orelse args.padding,
-            .south = args.padding_south orelse args.padding,
-            .west = args.padding_west orelse args.padding,
-            .east = args.padding_east orelse args.padding,
-        },
+        .padding = Padding.from(args),
 
         .widget = .{
             .vtable = &.{
@@ -200,6 +195,8 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
                 .area = area_after_padding,
 
                 .font_size = self.battery_font_size,
+
+                .outline = false,
 
                 .char = battery_symbol,
 

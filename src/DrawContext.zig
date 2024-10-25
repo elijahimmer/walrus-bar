@@ -470,9 +470,16 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
 }
 
 pub const DrawBitmapArgs = struct {
+    /// The glyph to draw
     glyph: *FreeTypeContext.Glyph,
+
+    /// Color to color glyph
     text_color: Color,
+
+    /// Maximum area the glyph can take up
     max_area: Rect,
+
+    /// The origin of the glyph (bottom right-ish)
     origin: Point,
 };
 

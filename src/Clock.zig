@@ -20,10 +20,14 @@ inline fn timeGlyphScaling(size: u31) u31 {
     return size * 27 / 20;
 }
 
+inline fn spacerGlyphScaling(size: u31) u31 {
+    return size * 8 / 10;
+}
+
 // TODO: use FreeTypeContext.maxGlyphSize(...)
-inline fn spacerSizeScale(self: *const Clock) u31 {
+inline fn spacerFontSize(self: *const Clock) u31 {
     const area_wo_padding = self.widget.area.removePadding(self.padding) orelse return 0;
-    return area_wo_padding.height * 8 / 10;
+    return spacerGlyphScaling(area_wo_padding.height);
 }
 
 /// conversion to draw from the widget vtable
@@ -58,46 +62,38 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
     self.seconds_box.draw(draw_context);
 
     if (should_redraw) spacer_drawing: {
-        const font_size = self.spacerSizeScale();
+        const font_size = self.spacerFontSize();
 
         const spacer_width: u31 = self.getSpacerWidth();
 
+        // if the padding is larger than the area, then there is nothing to draw.
         const area_wo_padding = self.widget.area.removePadding(self.padding) orelse break :spacer_drawing;
 
-        var max_time_glyph_area = Rect{
-            .x = area_wo_padding.x + hours_width,
-            .y = area_wo_padding.y,
-            .height = area_wo_padding.height,
-            .width = spacer_width,
+        var draw_args = FreeTypeContext.DrawCharArgs{
+            .draw_context = draw_context,
+            .text_color = self.spacer_color,
+            .area = Rect{
+                .x = area_wo_padding.x + hours_width,
+                .y = area_wo_padding.y,
+                .height = area_wo_padding.height,
+                .width = spacer_width,
+            },
+
+            .outline = false,
+
+            .char = self.spacer_char,
+            .width = .{ .fixed = spacer_width },
+            .font_size = font_size,
+
+            .hori_align = .center,
+            .vert_align = .center,
         };
 
-        freetype_context.drawChar(.{
-            .draw_context = draw_context,
-            .text_color = self.spacer_color,
-            .area = max_time_glyph_area,
+        freetype_context.drawChar(draw_args);
 
-            .char = self.spacer_char,
-            .width = .{ .fixed = spacer_width },
-            .font_size = font_size,
+        draw_args.area.x += spacer_width + minutes_width;
 
-            .hori_align = .center,
-            .vert_align = .center,
-        });
-
-        max_time_glyph_area.x += spacer_width + minutes_width;
-
-        freetype_context.drawChar(.{
-            .draw_context = draw_context,
-            .text_color = self.spacer_color,
-            .area = max_time_glyph_area,
-
-            .char = self.spacer_char,
-            .width = .{ .fixed = spacer_width },
-            .font_size = font_size,
-
-            .hori_align = .center,
-            .vert_align = .center,
-        });
+        freetype_context.drawChar(draw_args);
     }
 }
 
@@ -128,9 +124,10 @@ pub fn getWidth(self: *Clock) u31 {
 }
 
 fn getSpacerWidth(self: *Clock) u31 {
-    const font_size = self.spacerSizeScale();
+    const font_size = self.spacerFontSize();
     const glyph = freetype_context.loadChar(self.spacer_char, font_size, .default);
-    return timeGlyphScaling(glyph.advance_x >> 6);
+    const glyph_scaling = (glyph.advance_x >> 6) * 10 / 8;
+    return glyph_scaling;
 }
 
 pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {

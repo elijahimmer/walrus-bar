@@ -332,7 +332,7 @@ pub const DrawCharArgs = struct {
     char: u21,
 
     /// Used to debug
-    outline: bool = false,
+    outline: bool,
 
     /// At this font size.
     font_size: u32,
