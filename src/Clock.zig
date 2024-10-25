@@ -76,8 +76,6 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
             .text_color = self.spacer_color,
             .area = max_time_glyph_area,
 
-            .outline = true,
-
             .char = self.spacer_char,
             .width = .{ .fixed = spacer_width },
             .font_size = font_size,

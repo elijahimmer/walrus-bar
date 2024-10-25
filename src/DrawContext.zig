@@ -255,7 +255,7 @@ fn initWidgets(draw_context: *DrawContext) void {
             .warning_color = colors.rose,
             .full_color = colors.gold,
 
-            .padding = 5,
+            .padding = @as(u16, @intCast(draw_context.window_area.height / 10)),
 
             .area = .{
                 .x = draw_context.window_area.width - 1000,

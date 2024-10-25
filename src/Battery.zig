@@ -4,6 +4,7 @@ pub const battery_symbol: u21 = unicode.utf8Decode("") catch unreachable;
 pub const battery_path: []const u8 = "/tmp/BAT0/"; //"/sys/class/power_supply/BAT0/";
 pub const full_path: []const u8 = battery_path ++ "energy_full";
 pub const charge_path: []const u8 = battery_path ++ "energy_now";
+pub const status_path: []const u8 = battery_path ++ "status";
 
 background_color: Color,
 
@@ -13,10 +14,11 @@ critical_color: Color,
 warning_color: Color,
 full_color: Color,
 
-battery_charge: u64,
-battery_maximum: u64,
+fill_color: Color,
+fill_pixels: u31,
 progress_area: Rect,
 
+status_file: std.fs.File,
 charge_file: std.fs.File,
 full_file: std.fs.File,
 
@@ -68,6 +70,10 @@ pub fn init(args: NewArgs) !Battery {
         log.err("Battery charge file now found: {s}", .{@errorName(err)});
         return error.ChargeFileError;
     };
+    const status_file = std.fs.openFileAbsolute(status_path, .{}) catch |err| {
+        log.err("Battery charge file now found: {s}", .{@errorName(err)});
+        return error.ChargeFileError;
+    };
 
     var self = Battery{
         .background_color = args.background_color,
@@ -78,14 +84,15 @@ pub fn init(args: NewArgs) !Battery {
         .warning_color = args.warning_color,
         .full_color = args.full_color,
 
+        .fill_color = undefined,
         .battery_font_size = undefined,
         .battery_width = undefined,
 
-        .battery_charge = undefined,
-        .battery_maximum = undefined,
+        .fill_pixels = undefined,
 
         .progress_area = undefined,
 
+        .status_file = status_file,
         .charge_file = charge_file,
         .full_file = full_file,
 
@@ -119,14 +126,69 @@ fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     try self.draw(draw_context);
 }
 
-fn readFileInt(file: std.fs.File) void {
-    _ = file;
+/// Reads a file that only contains an int.
+fn readFileInt(comptime T: type, file: std.fs.File) !T {
+    assert(@typeInfo(T) == .Int);
+    assert(@typeInfo(T).Int.signedness == .unsigned);
+    const digits = comptime math.log(T, 10, maxInt(T));
+
+    try file.seekTo(0);
+
+    var bytes = try file.reader().readBoundedBytes(digits);
+    const str = mem.trim(u8, bytes.constSlice(), &ascii.whitespace);
+
+    return parseUnsigned(T, str, 10) catch |err| switch (err) {
+        // if the number is tooDischarging big, saturate it.
+        error.Overflow => maxInt(T),
+        error.InvalidCharacter => return error.InvalidCharacter,
+    };
+}
+
+const max_status_length = 64;
+
+/// Returns the color the battery should be.
+/// fill_ratio should be the amount of charge,
+///     maxInt(u8) meaning 100% full, 0 meaning 0% full
+fn getProgressColor(self: *const Battery, fill_ratio: u8) !Color {
+    const max_int = maxInt(u8);
+
+    try self.status_file.seekTo(0);
+    const status_bb = try self.status_file.reader().readBoundedBytes(max_status_length);
+    const status = mem.trim(u8, status_bb.constSlice(), &ascii.whitespace);
+
+    // TODO am I missing any status codes besides for "discharging"?
+    if (ascii.eqlIgnoreCase(status, "charging")) return self.charging_color;
+    if (ascii.eqlIgnoreCase(status, "full")) return self.full_color;
+
+    // if it is not charging, and it is close to full, assume it is full.
+    if (ascii.eqlIgnoreCase(status, "not charging") and fill_ratio > max_int * 9 / 10) return self.full_color;
+
+    if (!ascii.eqlIgnoreCase(status, "discharging")) {
+        log.warn("Unknown battery status: {s}", .{status});
+    }
+
+    if (fill_ratio < max_int * 3 / 20) return self.critical_color;
+    if (fill_ratio < max_int * 6 / 20) return self.warning_color;
+
+    return self.discharging_color;
 }
 
 pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
-    self.battery_charge = self.charge_file.readInt(u64);
+    const battery_capacity = try readFileInt(u31, self.full_file);
+    const battery_charge = @min(try readFileInt(u31, self.charge_file), battery_capacity);
 
-    const should_redraw = draw_context.full_redraw or self.widget.full_redraw;
+    const new_fill_pixels: u31 = @intCast(@as(u64, battery_charge) *| self.progress_area.width / battery_capacity);
+    assert(new_fill_pixels <= self.progress_area.width);
+    defer self.fill_pixels = new_fill_pixels;
+
+    const fill_ratio: u8 = @intCast(maxInt(u8) * battery_charge / battery_capacity);
+
+    const color: Color = try self.getProgressColor(fill_ratio);
+    defer self.fill_color = color;
+
+    // if the widget should to redraw, or if the color changed
+    const should_redraw = draw_context.full_redraw or self.widget.full_redraw or !meta.eql(color, self.fill_color);
+
     if (should_redraw) {
         self.widget.area.drawArea(draw_context, self.background_color);
 
@@ -134,7 +196,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             freetype_context.drawChar(.{
                 .draw_context = draw_context,
 
-                .text_color = self.discharging_color,
+                .text_color = color,
                 .area = area_after_padding,
 
                 .font_size = self.battery_font_size,
@@ -146,9 +208,30 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
                 .width = .{ .fixed = area_after_padding.width },
             });
-        }
 
-        self.progress_area.drawOutline(draw_context, colors.love);
+            var progress_area = self.progress_area;
+            progress_area.width = new_fill_pixels;
+
+            self.progress_area.drawArea(draw_context, self.background_color);
+            progress_area.drawArea(draw_context, color);
+        }
+    } else switch (math.order(new_fill_pixels, self.fill_pixels)) {
+        .gt => {
+            var progress_area = self.progress_area;
+            progress_area.x += self.fill_pixels;
+            progress_area.width = new_fill_pixels - self.fill_pixels;
+
+            progress_area.drawArea(draw_context, color);
+        },
+        .lt => {
+            var progress_area = self.progress_area;
+            progress_area.x += new_fill_pixels;
+            progress_area.width = self.fill_pixels - new_fill_pixels;
+
+            progress_area.drawArea(draw_context, self.background_color);
+        },
+        // do nothing
+        .eq => {},
     }
 }
 
@@ -309,11 +392,16 @@ const Color = colors.Color;
 const std = @import("std");
 const mem = std.mem;
 const math = std.math;
+const meta = std.meta;
+const ascii = std.ascii;
 const posix = std.posix;
 const unicode = std.unicode;
 
 const Allocator = std.mem.Allocator;
 const BoundedArray = std.BoundedArray;
+
 const assert = std.debug.assert;
+const parseUnsigned = std.fmt.parseUnsigned;
+const maxInt = std.math.maxInt;
 
 const log = std.log.scoped(.Battery);
