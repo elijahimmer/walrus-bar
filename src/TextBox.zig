@@ -122,6 +122,11 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
     self.text_first_diff = null;
 }
 
+fn getWidthWidget(widget: *Widget) u31 {
+    const self: *TextBox = @fieldParentPtr("widget", widget);
+    return self.getWidth();
+}
+
 /// Gets the total width of the textbox.
 /// This only computes it if the position or font size was changed
 /// since last calculation.
@@ -314,6 +319,7 @@ pub fn init(args: NewArgs) TextBox {
                 .draw = &TextBox.drawWidget,
                 .deinit = &TextBox.deinitWidget,
                 .setArea = &TextBox.setAreaWidget,
+                .getWidth = &TextBox.getWidthWidget,
             },
             .area = args.area,
         },

@@ -175,6 +175,7 @@ const loop_sleep_time = std.time.ns_per_ms * 50;
 
 pub fn work(state: *WorkspaceState) void {
     log.info("Hyprland Worker Started!", .{});
+    defer log.info("Hyprland Worker Stopped!", .{});
 
     initalizeState(state);
 
@@ -239,8 +240,6 @@ pub fn work(state: *WorkspaceState) void {
             processEvent(state, event, value);
         }
     }
-
-    log.info("Hyprland Worker Stopped!", .{});
 }
 
 pub fn initalizeState(state: *WorkspaceState) void {

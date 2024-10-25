@@ -1,5 +1,6 @@
 pub fn work(state: *WorkspaceState) void {
     log.info("Stub Worker Started!", .{});
+    defer log.info("Testing Worker Stopped!", .{});
 
     {
         state.rwlock.lock();
@@ -47,8 +48,6 @@ pub fn work(state: *WorkspaceState) void {
             state.active_workspace = 1;
         }
     }
-
-    log.info("Stub Worker Stopped!", .{});
 }
 
 pub fn available() bool {

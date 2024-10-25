@@ -29,7 +29,7 @@ full_redraw: bool = true,
 
 widget_left: ?Workspaces = null,
 widget_center: ?Clock = null,
-widget_right: ?*Widget = null,
+widget_right: ?Battery = null,
 
 pub const OutputContext = struct {
     output: *wl.Output,
@@ -80,7 +80,9 @@ pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
         log.debug("Output id #{} was deinited", .{draw_context.output_context.id});
 
     if (draw_context.widget_left) |*widget_left| widget_left.deinit();
-    if (draw_context.widget_right) |widget_right| widget_right.deinit(allocator);
+    //// no clock deinit needed
+    // if (draw_context.widget_center) |*widget_center| widget_center.deinit();
+    if (draw_context.widget_right) |*widget_right| widget_right.deinit();
 
     if (draw_context.shm_buffer) |shm_buffer| shm_buffer.destroy();
     if (draw_context.shm_fd) |shm_fd| posix.close(shm_fd);
@@ -242,6 +244,38 @@ fn initWidgets(draw_context: *DrawContext) void {
 
         draw_context.widget_left = workspaces;
     }
+
+    battery: { // Battery
+        var battery = Battery.init(.{
+            .background_color = colors.surface,
+
+            .discharging_color = colors.pine,
+            .charging_color = colors.iris,
+            .critical_color = colors.love,
+            .warning_color = colors.rose,
+            .full_color = colors.gold,
+
+            .padding = 5,
+
+            .area = .{
+                .x = draw_context.window_area.width - 1000,
+                .y = 0,
+                .width = 1000,
+                .height = draw_context.window_area.height,
+            },
+        }) catch |err| {
+            log.warn("Failed to initalized Battery with: {s}", .{@errorName(err)});
+            break :battery;
+        };
+
+        var right_area = battery.widget.area;
+        right_area.width = battery.getWidth();
+        right_area.x = draw_context.window_area.width - right_area.width;
+
+        battery.setArea(right_area);
+
+        draw_context.widget_right = battery;
+    }
 }
 
 pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_context: *WaylandContext) void {
@@ -398,17 +432,17 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
 pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
     _ = wayland_context;
 
-    inline for (.{
-        "widget_right",
-    }) |name| {
-        if (@field(draw_context, name)) |w| {
-            draw_context.current_area = w.area;
-            w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
-            w.full_redraw = false;
-        }
-    }
+    //inline for (.{
+    //    "widget_right",
+    //}) |name| {
+    //    if (@field(draw_context, name)) |w| {
+    //        draw_context.current_area = w.area;
+    //        w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
+    //        w.full_redraw = false;
+    //    }
+    //}
 
-    inline for (.{ "widget_left", "widget_center" }) |name| {
+    inline for (.{ "widget_left", "widget_center", "widget_right" }) |name| {
         if (@field(draw_context, name)) |*w| {
             draw_context.current_area = w.widget.area;
             w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
@@ -450,13 +484,13 @@ pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
     assert(args.glyph.bitmap_buffer != null);
     const glyph = args.glyph;
 
-    if (glyph.bitmap_rows == 0 or glyph.bitmap_width == 0) return;
+    if (glyph.bitmap_height == 0 or glyph.bitmap_width == 0) return;
 
     const glyph_area = Rect{
         .x = args.origin.x + glyph.bitmap_left,
         .y = args.origin.y -| glyph.bitmap_top,
         .width = glyph.bitmap_width,
-        .height = glyph.bitmap_rows,
+        .height = glyph.bitmap_height,
     };
 
     if (glyph_area.width == 0 or glyph_area.height == 0) return;
@@ -500,6 +534,7 @@ const Config = @import("Config.zig");
 const config = &Config.global;
 
 const Workspaces = @import("Workspaces/Workspaces.zig");
+const Battery = @import("Battery.zig");
 const Clock = @import("Clock.zig");
 
 const drawing = @import("drawing.zig");

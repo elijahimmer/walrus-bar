@@ -117,11 +117,11 @@ pub const Rect = struct {
 
     /// Center inner box in self. Asserts self is larger than inner
     pub fn center(self: Rect, inner: Point) Rect {
-        return self.align_with(inner, .center, .center);
+        return self.alignWith(inner, .center, .center);
     }
 
     /// Inner is the width and height of the returned Rect.
-    pub fn align_with(self: Rect, inner: Point, hori_align: Align, vert_align: Align) Rect {
+    pub fn alignWith(self: Rect, inner: Point, hori_align: Align, vert_align: Align) Rect {
         assert(self.width >= inner.x);
         assert(self.height >= inner.y);
 
@@ -145,11 +145,16 @@ pub const Rect = struct {
         };
     }
 
-    pub fn removePadding(self: Rect, padding: Padding) Rect {
+    /// Remove the padding from each side of widget
+    pub fn removePadding(self: Rect, padding: Padding) ?Rect {
+        if (self.height < (padding.north + padding.south) or self.width < (padding.east + padding.west)) {
+            return null;
+        }
+
         return .{
-            .x = self.x + padding.west,
+            .x = self.x + padding.east,
             .y = self.y + padding.north,
-            .width = self.width - padding.west - padding.east,
+            .width = self.width - padding.east - padding.west,
             .height = self.height - padding.north - padding.south,
         };
     }
@@ -238,9 +243,11 @@ pub const Rect = struct {
 
 pub const Widget = struct {
     const VTable = struct {
+        // TODO: Don't use anyerror here. It sucks.
         draw: *const fn (*Widget, *DrawContext) anyerror!void,
         deinit: *const fn (*Widget, Allocator) void,
         setArea: *const fn (*Widget, Rect) void,
+        getWidth: *const fn (*Widget) u31,
     };
     vtable: *const VTable,
 
@@ -254,12 +261,19 @@ pub const Widget = struct {
         try self.vtable.draw(self, draw_context);
     }
 
+    /// Deinitializes the widget
     pub inline fn deinit(self: *Widget, allocator: Allocator) void {
         self.vtable.deinit(self, allocator);
     }
 
+    /// Sets the widget's area. Don't set it directly or drawing may mess up.
     pub inline fn setArea(self: *Widget, area: Rect) void {
         self.vtable.setArea(self, area);
+    }
+
+    /// Returns the actual width used, including padding.
+    pub inline fn getWidth(self: *Widget) u32 {
+        return self.vtable.getWidth(self);
     }
 
     pub fn getParent(self: *Widget, T: type) *T {

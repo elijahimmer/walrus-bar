@@ -27,6 +27,11 @@ active_workspace: WorkspaceID,
 workspaces: WorkspacesArray,
 workspaces_symbols: []const u8,
 
+fn getWidthWidget(widget: *Widget) u31 {
+    const self: *Workspaces = @fieldParentPtr("widget", widget);
+    return self.getWidth();
+}
+
 pub fn getWidth(self: *Workspaces) u31 {
     return self.widget.area.height * max_workspace_count;
 }
@@ -37,8 +42,7 @@ fn setAreaWidget(widget: *Widget, area: Rect) void {
 }
 
 pub fn setArea(self: *Workspaces, area: Rect) void {
-    // TODO: Maybe make this not crash if it is not wide enough
-    // Should always be wide enough
+    // TODO: Make this have a dynamic max_workspace_count for the size it can hold.
     assert(area.height * max_workspace_count <= area.width);
 
     self.widget.area = area;
@@ -235,9 +239,10 @@ pub fn init(args: NewArgs) !Workspaces {
         .widget = .{
             .area = args.area,
             .vtable = &.{
-                .draw = &drawWidget,
-                .setArea = &setAreaWidget,
-                .deinit = &deinitWidget,
+                .draw = &Workspaces.drawWidget,
+                .deinit = &Workspaces.deinitWidget,
+                .setArea = &Workspaces.setAreaWidget,
+                .getWidth = &Workspaces.getWidthWidget,
             },
         },
     };

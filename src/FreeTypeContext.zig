@@ -39,8 +39,8 @@ pub const Glyph = struct {
     bitmap_top: u31,
     bitmap_left: u31,
 
-    bitmap_rows: u31,
     bitmap_width: u31,
+    bitmap_height: u31,
     bitmap_buffer: ?[]const u8,
 
     load_mode: LoadMode,
@@ -61,8 +61,8 @@ pub const Glyph = struct {
             .advance_x = @intCast(glyph.*.advance.x),
             .bitmap_top = @intCast(glyph.*.bitmap_top),
             .bitmap_left = @intCast(glyph.*.bitmap_left),
-            .bitmap_rows = @intCast(bitmap.rows),
             .bitmap_width = @intCast(bitmap.width),
+            .bitmap_height = @intCast(bitmap.rows),
             .bitmap_buffer = bitmap_buffer,
             .load_mode = load_mode,
         };
@@ -211,6 +211,47 @@ pub const LoadMode = enum(u2) {
     render,
 };
 
+pub const MaximumFontSizeReturn = struct {
+    font_size: u31,
+    width: u31,
+    height: u31,
+};
+
+/// Returns the largest font size specified glyph can be to fit in the area.
+/// This loads the glyph twice, and does not cache the first load.
+/// The second load is cached with `LoadMode.metrics`
+pub fn maximumFontSize(self: *FreeTypeContext, char: u21, area: Rect) MaximumFontSizeReturn {
+    const scale_initial = @min(area.width, area.height);
+    const metrics_initial = self.loadCharNoCache(char, scale_initial, .metrics).metrics;
+
+    const width_initial: u31 = @intCast(metrics_initial.width >> 6);
+    const height_initial: u31 = @intCast(metrics_initial.height >> 6);
+
+    log.debug("maximumFontSize :: area width: {}, height: {}", .{ area.width, area.height });
+    log.debug("\tinitial width: {}, height: {}", .{ width_initial, height_initial });
+
+    const width_scaling = area.width * area.width / width_initial;
+    const height_scaling = area.height * area.height / height_initial;
+
+    const scale_new = @min(width_scaling, height_scaling);
+
+    const metrics_new = self.loadChar(char, scale_new, .metrics).metrics;
+
+    const width_new: u31 = @intCast(metrics_new.width >> 6);
+    const height_new: u31 = @intCast(metrics_new.height >> 6);
+
+    log.debug("\tnew width: {}, height: {}", .{ width_new, height_new });
+
+    assert(width_new <= area.width);
+    assert(height_new <= area.height);
+
+    return .{
+        .font_size = scale_new,
+        .width = width_new,
+        .height = height_new,
+    };
+}
+
 /// Returns a pointer to a `Glyph`. This pointer may be invalidated after another call to loadChar,
 ///     and should not be stored.
 ///
@@ -254,6 +295,12 @@ pub fn loadChar(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: Lo
         //log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice, font_size });
     }
 
+    cache_record.value_ptr.* = self.loadCharNoCache(char, font_size, load_mode);
+
+    return cache_record.value_ptr;
+}
+
+pub fn loadCharNoCache(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: LoadMode) Glyph {
     self.setFontPixelSize(font_size);
 
     const freetype_flags: i32 = switch (load_mode) {
@@ -271,34 +318,40 @@ pub fn loadChar(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: Lo
         freetype_utils.errorAssert(err2, "Failed to load replacement glyph!", .{});
     }
 
-    cache_record.value_ptr.* = Glyph.from(self.allocator, self.font_face.*.glyph, load_mode);
-
-    return cache_record.value_ptr;
+    return Glyph.from(self.allocator, self.font_face.*.glyph, load_mode);
 }
 
 pub const DrawCharArgs = struct {
     draw_context: *const DrawContext,
     text_color: Color,
+
+    /// The maximum area it can take up.
     area: Rect,
 
-    font_size: u32,
-
-    /// asserts this is a single UTF-8 Character.
     /// Draw this character.
     char: u21,
 
     /// Used to debug
     outline: bool = false,
 
+    /// At this font size.
+    font_size: u32,
+
+    /// How to align horizontally the glyph in the maximum area.
     hori_align: Align,
+    /// How to align vertically the glyph in the maximum area.
     vert_align: Align,
 
+    /// Which width scaling option to use.
     width: WidthOptions,
 
     pub const WidthOptions = union(enum) {
+        /// Make the max glyph area a specific width.
         fixed: u31,
+        /// Scale the glyph's advance width by a function.
         scaling: *const fn (u31) u31,
-        glyph,
+        /// just use the glyph's advance width
+        advance,
     };
 };
 
@@ -309,7 +362,7 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
 
     const glyph_dims = Point{
         .x = glyph.bitmap_width,
-        .y = glyph.bitmap_rows,
+        .y = glyph.bitmap_height,
     };
 
     const max_glyph_area = Rect{
@@ -317,20 +370,20 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
         .y = args.area.y,
         .height = args.area.height,
         .width = switch (args.width) {
-            .glyph => glyph.advance_x >> 6,
+            .advance => glyph.advance_x >> 6,
             .fixed => |fixed| fixed,
             .scaling => |scale_func| scale_func(glyph.advance_x >> 6),
         },
     };
 
-    const glyph_area = max_glyph_area.align_with(glyph_dims, args.hori_align, args.vert_align);
+    const glyph_area = max_glyph_area.alignWith(glyph_dims, args.hori_align, args.vert_align);
 
     const glyph_height: u31 = @intCast(glyph.metrics.height >> 6);
     const glyph_upper: u31 = @intCast(glyph.metrics.horiBearingY >> 6);
 
     const origin = Point{
         .x = glyph_area.x - glyph.bitmap_left,
-        .y = glyph_area.y + glyph_area.height - (glyph_height - glyph_upper),
+        .y = glyph_area.y + glyph_area.height - glyph_height + glyph_upper,
     };
 
     args.draw_context.drawBitmap(.{

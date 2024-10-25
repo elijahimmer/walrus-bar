@@ -6,6 +6,12 @@ pub const Color = packed struct(u32) {
     a: u8,
 
     pub const FORMAT: wl.Shm.Format = .argb8888;
+
+    pub fn withAlpha(self: Color, alpha: u8) Color {
+        var new = self;
+        new.a = alpha;
+        return new;
+    }
 };
 
 /// turns a rgb int into a color

@@ -22,7 +22,7 @@ inline fn timeGlyphScaling(size: u31) u31 {
 
 // TODO: use FreeTypeContext.maxGlyphSize(...)
 inline fn spacerSizeScale(self: *const Clock) u31 {
-    const area_wo_padding = self.widget.area.removePadding(self.padding);
+    const area_wo_padding = self.widget.area.removePadding(self.padding) orelse return 0;
     return area_wo_padding.height * 8 / 10;
 }
 
@@ -57,12 +57,12 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
     self.seconds_box.setText(&num2Char(@intCast(localtime.*.tm_sec)));
     self.seconds_box.draw(draw_context);
 
-    if (should_redraw) {
+    if (should_redraw) spacer_drawing: {
         const font_size = self.spacerSizeScale();
 
         const spacer_width: u31 = self.getSpacerWidth();
 
-        const area_wo_padding = self.widget.area.removePadding(self.padding);
+        const area_wo_padding = self.widget.area.removePadding(self.padding) orelse break :spacer_drawing;
 
         var max_time_glyph_area = Rect{
             .x = area_wo_padding.x + hours_width,
@@ -111,6 +111,11 @@ fn num2Char(num: u7) [2]u8 {
         '0' + @as(u8, @intCast(num / 10)),
         '0' + @as(u8, @intCast(num % 10)),
     };
+}
+
+fn getWidthWidget(widget: *Widget) u31 {
+    const self: *Clock = @fieldParentPtr("widget", widget);
+    return self.getWidth();
 }
 
 /// returns the used width in pixels
@@ -197,11 +202,11 @@ pub const NewArgs = struct {
 };
 
 pub fn newWidget(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
-    const clock = try allocator.create(TextBox);
+    const clock = try allocator.create(Clock);
 
     clock.* = Clock.init(args);
 
-    return &Clock.widget;
+    return &clock.widget;
 }
 
 pub fn init(args: NewArgs) Clock {
@@ -246,6 +251,7 @@ pub fn init(args: NewArgs) Clock {
                 .draw = &Clock.drawWidget,
                 .deinit = &Clock.deinitWidget,
                 .setArea = &Clock.setAreaWidget,
+                .getWidth = &Clock.getWidthWidget,
             },
 
             .area = args.area,
