@@ -12,16 +12,17 @@ font_face: freetype.FT_Face,
 cache: Cache,
 allocator: Allocator,
 
+cache_allocator_internal: FixedBufferAllocator,
+cache_allocator_buffer: [options.freetype_cache_size]u8,
+
 internal: Internal,
 
 pub const Internal = struct {
     freetype_allocator: freetype.FT_MemoryRec_,
     alloc_user: freetype_utils.AllocUser,
-
-    fixed_buffer: if (options.freetype_allocator == .@"fixed-buffer") *FixedBufferAllocator else void,
 };
 
-pub const Cache = AutoHashMapUnmanaged(CacheKey, Glyph);
+pub const Cache = AutoHashMap(CacheKey, Glyph);
 pub const CacheKey = struct {
     /// A unicode character
     char: u21,
@@ -32,6 +33,8 @@ pub const CacheKey = struct {
 /// Stores a glyph, and it's bitmap (if needed);
 /// the bitmap fields will be undefined if the load_mode is less than render.
 pub const Glyph = struct {
+    time: i64,
+
     metrics: freetype.FT_Glyph_Metrics,
 
     advance_x: u31,
@@ -57,6 +60,7 @@ pub const Glyph = struct {
         } else null;
 
         return .{
+            .time = std.time.milliTimestamp(),
             .metrics = glyph.*.metrics,
             .advance_x = @intCast(glyph.*.advance.x),
             .bitmap_top = @intCast(glyph.*.bitmap_top),
@@ -70,18 +74,14 @@ pub const Glyph = struct {
 };
 
 pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
+    global.cache_allocator_buffer = undefined;
+    global.cache_allocator_internal = FixedBufferAllocator.init(&global.cache_allocator_buffer);
+    global.cache = Cache.init(global.cache_allocator_internal.allocator());
+
     const alloc = alloc: {
         const alloc = switch (options.freetype_allocator) {
             .c => std.heap.c_allocator,
             .zig => parent_allocator,
-            .@"fixed-buffer" => fixed_buffer: {
-                var fixed_buffer = try parent_allocator.create(FixedBufferAllocator);
-                global.internal.fixed_buffer = fixed_buffer;
-
-                fixed_buffer.* = FixedBufferAllocator.init(try parent_allocator.alloc(u8, options.freetype_fixed_allocator_len));
-
-                break :fixed_buffer fixed_buffer.allocator();
-            },
         };
 
         break :alloc alloc;
@@ -127,8 +127,6 @@ pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
         const err = freetype.FT_Select_Charmap(global.font_face, freetype.FT_ENCODING_UNICODE);
         freetype_utils.errorAssert(err, "Failed to set charmap to unicode", .{});
     }
-
-    global.cache = Cache{};
 }
 
 pub fn deinit(self: *FreeTypeContext) void {
@@ -147,9 +145,6 @@ pub fn deinit(self: *FreeTypeContext) void {
     }
 
     self.internal.alloc_user.alloc_list.deinit(self.internal.alloc_user.allocator);
-    if (options.freetype_allocator == .@"fixed-buffer") {
-        self.allocator.free(self.internal.fixed_buffer.buffer);
-    }
 
     var cache_iter = self.cache.valueIterator();
 
@@ -159,7 +154,7 @@ pub fn deinit(self: *FreeTypeContext) void {
         }
     }
 
-    self.cache.deinit(self.internal.alloc_user.allocator);
+    self.cache.deinit();
 
     self.* = undefined;
 }
@@ -227,8 +222,8 @@ pub fn maximumFontSize(self: *FreeTypeContext, char: u21, area: Rect) MaximumFon
     const width_initial: u31 = @intCast(metrics_initial.width >> 6);
     const height_initial: u31 = @intCast(metrics_initial.height >> 6);
 
-    log.debug("maximumFontSize :: area width: {}, height: {}", .{ area.width, area.height });
-    log.debug("\tinitial width: {}, height: {}", .{ width_initial, height_initial });
+    //log.debug("maximumFontSize :: area width: {}, height: {}", .{ area.width, area.height });
+    //log.debug("\tinitial width: {}, height: {}", .{ width_initial, height_initial });
 
     const width_scaling = area.width * area.width / width_initial;
     const height_scaling = area.height * area.height / height_initial;
@@ -240,7 +235,7 @@ pub fn maximumFontSize(self: *FreeTypeContext, char: u21, area: Rect) MaximumFon
     const width_new: u31 = @intCast(metrics_new.width >> 6);
     const height_new: u31 = @intCast(metrics_new.height >> 6);
 
-    log.debug("\tnew width: {}, height: {}", .{ width_new, height_new });
+    //log.debug("\tnew width: {}, height: {}", .{ width_new, height_new });
 
     assert(width_new <= area.width);
     assert(height_new <= area.height);
@@ -279,12 +274,19 @@ pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, font_size: 
 pub fn loadChar(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: LoadMode) *Glyph {
     // TODO: Implement cache clearing
     const cache_record = self.cache.getOrPut(
-        self.allocator,
         .{
             .char = char,
             .font_size = font_size,
         },
-    ) catch @panic("Out Of Memory");
+    ) catch cache_record: {
+        self.cleanCache();
+        break :cache_record self.cache.getOrPut(
+            .{
+                .char = char,
+                .font_size = font_size,
+            },
+        ) catch unreachable;
+    };
 
     if (cache_record.found_existing) {
         if (@intFromEnum(load_mode) <= @intFromEnum(cache_record.value_ptr.load_mode)) {
@@ -292,7 +294,13 @@ pub fn loadChar(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: Lo
         }
         //log.debug("Cached glyph had lower load_mode: '{s}', {s} vs {s}", .{ char_slice, @tagName(load_mode), @tagName(cache_hit.load_mode) });
     } else {
-        //log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice, font_size });
+        var char_slice: [4]u8 = undefined;
+
+        const bytes = unicode.utf8Encode(char, &char_slice) catch |err| switch (err) {
+            error.CodepointTooLarge, error.Utf8CannotEncodeSurrogateHalf => unreachable,
+        };
+
+        log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice[0..bytes], font_size });
     }
 
     cache_record.value_ptr.* = self.loadCharNoCache(char, font_size, load_mode);
@@ -399,6 +407,64 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
     }
 }
 
+comptime {
+    const total_glyphs = options.freetype_cache_size / @sizeOf(Glyph);
+    if (total_glyphs < 50) {
+        @compileLog("Choosen freetype-cache-size is too small and will be inefficient");
+    }
+}
+
+fn cleanCache(self: *FreeTypeContext) void {
+    log.info("Cleaning Cache...", .{});
+    defer log.info("Done Cache...", .{});
+    // 20% of total glyphs.
+    const num_to_remove = options.freetype_cache_size / (5 * @sizeOf(Glyph));
+
+    const CleanInfo = struct {
+        key: CacheKey,
+        time: i64,
+
+        pub fn lessThan(ctx: void, lhs: @This(), rhs: @This()) bool {
+            _ = ctx;
+            return lhs.time < rhs.time;
+        }
+    };
+
+    var glyphs_to_remove = BoundedArray(CleanInfo, num_to_remove){};
+
+    {
+        var iter = self.cache.iterator();
+
+        for (0..num_to_remove) |_| {
+            const glyph = iter.next() orelse break;
+
+            glyphs_to_remove.append(.{
+                .key = glyph.key_ptr.*,
+                .time = glyph.value_ptr.time,
+            }) catch unreachable;
+        }
+
+        mem.sort(CleanInfo, glyphs_to_remove.slice(), @as(void, undefined), CleanInfo.lessThan);
+
+        while (iter.next()) |entry| {
+            const clean_info = CleanInfo{
+                .key = entry.key_ptr.*,
+                .time = entry.value_ptr.time,
+            };
+            const lower_bound = std.sort.lowerBound(CleanInfo, clean_info, glyphs_to_remove.slice(), @as(void, undefined), CleanInfo.lessThan);
+
+            if (lower_bound < num_to_remove) {
+                _ = glyphs_to_remove.pop();
+                glyphs_to_remove.insert(lower_bound, clean_info) catch unreachable;
+            }
+        }
+    }
+
+    for (glyphs_to_remove.slice()) |glyph| {
+        assert(self.cache.remove(glyph.key));
+    }
+}
+
 test global {
     try init_global(std.testing.allocator);
     defer global.deinit();
@@ -433,7 +499,7 @@ const assert = std.debug.assert;
 const unicode = std.unicode;
 
 const Allocator = mem.Allocator;
-const AutoHashMapUnmanaged = std.AutoHashMapUnmanaged;
+const AutoHashMap = std.AutoHashMap;
 const FixedBufferAllocator = std.heap.FixedBufferAllocator;
 const BoundedArray = std.BoundedArray;
 

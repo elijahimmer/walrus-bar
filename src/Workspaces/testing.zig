@@ -60,4 +60,4 @@ const max_workspaces_count = @import("Workspaces.zig").max_workspaces_count;
 
 const std = @import("std");
 
-const log = std.log.scoped(.StubWorker);
+const log = std.log.scoped(.WorkspacesWorker);

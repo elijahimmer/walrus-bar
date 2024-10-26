@@ -61,7 +61,11 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 .middle_click => {
                     wayland_context.running = false;
                 },
-                .left_click, .right_click => {},
+                .left_click, .right_click => {
+                    for (wayland_context.outputs.items) |*output| {
+                        output.full_redraw = true;
+                    }
+                },
                 _ => {
                     log.debug("unknown button pressed: {}", .{button.button});
                 },

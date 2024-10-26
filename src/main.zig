@@ -69,6 +69,33 @@ test {
     std.testing.refAllDecls(Config);
 }
 
+// build options
+const bo = @import("options");
+pub const std_options = .{
+    .log_scope_levels = &[_]std.log.ScopeLevel{
+        // TODO: Find a good way to automate this...
+        // Workspaces
+        .{
+            .scope = .Workspaces,
+            .level = if (bo.workspaces_verbose) .debug else .info,
+        },
+        .{
+            .scope = .WorkspacesWorker,
+            .level = if (bo.workspaces_verbose) .debug else .info,
+        },
+        // Battery
+        .{
+            .scope = .Battery,
+            .level = if (bo.battery_verbose) .debug else .info,
+        },
+        // Clock
+        .{
+            .scope = .Clock,
+            .level = if (bo.clock_verbose) .debug else .info,
+        },
+    },
+};
+
 const WaylandContext = @import("WaylandContext.zig");
 const DrawContext = @import("DrawContext.zig");
 

@@ -235,7 +235,7 @@ pub const Rect = struct {
 
         const base_color = draw_context.screen[y_coord * window_width + x_coord];
 
-        const new_color = colors.composite(base_color, color);
+        const new_color = base_color.composite(color);
 
         draw_context.screen[y_coord * window_width + x_coord] = new_color;
     }

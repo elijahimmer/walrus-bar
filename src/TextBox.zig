@@ -44,6 +44,8 @@ last_calculated_width: ?u31 = null,
 text_color: Color,
 background_color: Color,
 
+should_outline: bool,
+
 padding_north: u16,
 padding_south: u16,
 padding_east: u16,
@@ -83,7 +85,9 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
         var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
         for (0..text_idx) |_| {
             const utf8_char = utf8_iter.nextCodepoint().?;
-            const glyph = freetype_context.loadChar(utf8_char, font_size, .default);
+            // use render here because we are about to draw it anyway, and no point
+            // of computing it multiple times.
+            const glyph = freetype_context.loadChar(utf8_char, font_size, .render);
 
             pen_x += glyph.advance_x;
         }
@@ -100,7 +104,6 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
 
         // cover up old glyphs drawn.
         complete_glyph_area.drawArea(draw_context, self.background_color);
-        //complete_glyph_area.drawOutline(draw_context, colors.gold);
 
         draw_context.damage(complete_glyph_area);
 
@@ -115,6 +118,10 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
             });
 
             pen_x += glyph.advance_x;
+        }
+
+        if (self.should_outline) {
+            area.drawOutline(draw_context, colors.gold);
         }
     }
 
@@ -267,6 +274,8 @@ pub const NewArgs = struct {
 
     scaling: ScalingTypeArg = .normal,
 
+    outline: bool,
+
     padding: u16 = 0,
 
     padding_north: ?u16 = null,
@@ -308,6 +317,8 @@ pub fn init(args: NewArgs) TextBox {
                 .last_calculated_scale = null,
             } },
         },
+
+        .should_outline = args.outline,
 
         .padding_north = args.padding_north orelse args.padding,
         .padding_south = args.padding_south orelse args.padding,

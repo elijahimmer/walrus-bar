@@ -12,6 +12,30 @@ pub const Color = packed struct(u32) {
         new.a = alpha;
         return new;
     }
+
+    pub fn composite(bg: Color, fg: Color) Color {
+        const ratio = @as(f32, @floatFromInt(fg.a)) / 255.0;
+        const ratio_old = @max(1.0 - ratio, 0.0);
+
+        const r_fg, const g_fg, const b_fg = .{ @as(f32, @floatFromInt(fg.r)), @as(f32, @floatFromInt(fg.g)), @as(f32, @floatFromInt(fg.b)) };
+        const r_bg, const g_bg, const b_bg = .{ @as(f32, @floatFromInt(bg.r)), @as(f32, @floatFromInt(bg.g)), @as(f32, @floatFromInt(bg.b)) };
+
+        return .{
+            .a = bg.a +| fg.a,
+            .r = @intFromFloat(ratio * r_fg + ratio_old * r_bg),
+            .g = @intFromFloat(ratio * g_fg + ratio_old * g_bg),
+            .b = @intFromFloat(ratio * b_fg + ratio_old * b_bg),
+        };
+    }
+
+    test composite {
+        const expect = std.testing.expect;
+
+        const compos = @as(u32, @bitCast(composite(all_colors.black, all_colors.main)));
+        const color = @as(u32, @bitCast(all_colors.main));
+
+        try expect(compos == color);
+    }
 };
 
 /// turns a rgb int into a color
@@ -139,29 +163,6 @@ test str2Color {
 }
 
 // Simply blends the two colors together by multiplying them by the `fg`'s alpha/255
-pub fn composite(bg: Color, fg: Color) Color {
-    const ratio = @as(f32, @floatFromInt(fg.a)) / 255.0;
-    const ratio_old = @max(1.0 - ratio, 0.0);
-
-    const r_fg, const g_fg, const b_fg = .{ @as(f32, @floatFromInt(fg.r)), @as(f32, @floatFromInt(fg.g)), @as(f32, @floatFromInt(fg.b)) };
-    const r_bg, const g_bg, const b_bg = .{ @as(f32, @floatFromInt(bg.r)), @as(f32, @floatFromInt(bg.g)), @as(f32, @floatFromInt(bg.b)) };
-
-    return .{
-        .a = bg.a +| fg.a,
-        .r = @intFromFloat(ratio * r_fg + ratio_old * r_bg),
-        .g = @intFromFloat(ratio * g_fg + ratio_old * g_bg),
-        .b = @intFromFloat(ratio * b_fg + ratio_old * b_bg),
-    };
-}
-
-test composite {
-    const expect = std.testing.expect;
-
-    const compos = @as(u32, @bitCast(composite(all_colors.black, all_colors.main)));
-    const color = @as(u32, @bitCast(all_colors.main));
-
-    try expect(compos == color);
-}
 
 pub const all_colors = struct {
     // TODO: Add more colors here.

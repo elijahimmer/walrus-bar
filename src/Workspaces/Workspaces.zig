@@ -1,3 +1,5 @@
+//! TODO: implement padding and workspace spacing.
+
 pub const Workspaces = @This();
 
 pub const Workspace = struct {
@@ -62,11 +64,9 @@ pub inline fn fontScalingFactor(height: u31) u31 {
 pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
     try self.updateState();
 
-    const full_redraw = self.widget.full_redraw;
+    const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
 
     if (full_redraw) {
-        log.debug("full redraw", .{});
-
         self.widget.area.drawArea(draw_context, self.background_color);
     }
 
@@ -84,7 +84,7 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
             freetype_context.drawChar(.{
                 .draw_context = draw_context,
 
-                .outline = false,
+                .outline = options.workspaces_outlines,
 
                 .text_color = self.text_color,
 
@@ -100,12 +100,13 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
             if (!full_redraw) {
                 draw_context.damage(wksp.area);
             }
+
             wksp.should_redraw = false;
         }
     }
 
     // fill in the left-behinds
-    if (self.fill_background and !self.widget.full_redraw) {
+    if (self.fill_background and !full_redraw) {
         var area = self.widget.area;
 
         const start = if (self.workspaces.len > 0)

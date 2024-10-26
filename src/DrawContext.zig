@@ -255,6 +255,9 @@ fn initWidgets(draw_context: *DrawContext) void {
             .warning_color = colors.rose,
             .full_color = colors.gold,
 
+            .battery_name = config.battery_name,
+            .battery_directory = config.battery_directory,
+
             .padding = @as(u16, @intCast(draw_context.window_area.height / 10)),
 
             .area = .{
@@ -432,15 +435,10 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
 pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
     _ = wayland_context;
 
-    //inline for (.{
-    //    "widget_right",
-    //}) |name| {
-    //    if (@field(draw_context, name)) |w| {
-    //        draw_context.current_area = w.area;
-    //        w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
-    //        w.full_redraw = false;
-    //    }
-    //}
+    if (draw_context.full_redraw) {
+        draw_context.current_area = draw_context.window_area;
+        draw_context.window_area.drawArea(draw_context, config.background_color);
+    }
 
     inline for (.{ "widget_left", "widget_center", "widget_right" }) |name| {
         if (@field(draw_context, name)) |*w| {
@@ -518,10 +516,11 @@ pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
         for (x_start_local..x_start_local + used_area.width) |x_coord_local| {
             assert(x_coord_local <= glyph_area.width);
 
-            var color = args.text_color;
-            color.a = bitmap_row[x_coord_local];
-
-            glyph_area.putComposite(draw_context, .{ .x = @intCast(x_coord_local), .y = @intCast(y_coord_local) }, color);
+            glyph_area.putComposite(
+                draw_context,
+                .{ .x = @intCast(x_coord_local), .y = @intCast(y_coord_local) },
+                args.text_color.withAlpha(bitmap_row[x_coord_local]),
+            );
         }
     }
 }

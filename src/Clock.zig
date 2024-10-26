@@ -1,3 +1,4 @@
+//! TODO: Clock verbose logging
 pub const Clock = @This();
 
 hours_box: TextBox,
@@ -48,6 +49,7 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
         self.hours_box.widget.full_redraw = true;
         self.minutes_box.widget.full_redraw = true;
         self.seconds_box.widget.full_redraw = true;
+        if (options.clock_outlines) self.widget.area.drawOutline(draw_context, colors.border);
     }
 
     self.hours_box.setText(&num2Char(@intCast(localtime.*.tm_hour)));
@@ -79,7 +81,7 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
                 .width = spacer_width,
             },
 
-            .outline = false,
+            .outline = options.clock_outlines,
 
             .char = self.spacer_char,
             .width = .{ .fixed = spacer_width },
@@ -89,10 +91,12 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
             .vert_align = .center,
         };
 
+        draw_args.area.drawArea(draw_context, self.background_color);
         freetype_context.drawChar(draw_args);
 
         draw_args.area.x += spacer_width + minutes_width;
 
+        draw_args.area.drawArea(draw_context, self.background_color);
         freetype_context.drawChar(draw_args);
     }
 }
@@ -218,6 +222,8 @@ pub fn init(args: NewArgs) Clock {
         .text_color = args.text_color,
         .background_color = args.background_color,
 
+        .outline = options.clock_outlines,
+
         // area undefined because the self.setArea() will set it.
         .area = undefined,
 
@@ -257,6 +263,8 @@ pub fn init(args: NewArgs) Clock {
 
     return self;
 }
+
+const options = @import("options");
 
 const TextBox = @import("TextBox.zig");
 

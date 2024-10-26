@@ -21,15 +21,15 @@ pub fn build(b: *std.Build) void {
     font.addOption([]const u8, "font_data", font_data);
 
     const options = b.addOptions();
-    const FreeTypeAllocatorOptions = enum { c, zig, @"fixed-buffer" };
-    const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use") orelse .zig;
+    const FreeTypeAllocatorOptions = enum { c, zig };
+    const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use (default: zig)") orelse .zig;
     options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
-
-    const freetype_allocator_fixed_buffer_len = b.option(usize, "freetype-fixed-allocator-len", "How large should be fixed buffer allocator size be") orelse 100 * 1024;
-    options.addOption(usize, "freetype_fixed_allocator_len", freetype_allocator_fixed_buffer_len);
 
     const freetype_allocation_logging = b.option(bool, "freetype-allocation-logging", "Whether or not to log FreeType Allocations.") orelse false;
     options.addOption(bool, "freetype_allocation_logging", freetype_allocation_logging);
+
+    const freetype_cache_size = b.option(usize, "freetype-cache-size", "The default glyph cache size in bytes (default: 16384)") orelse 16384;
+    options.addOption(usize, "freetype_cache_size", freetype_cache_size);
 
     const track_damage = b.option(bool, "track-damage", "Whether to outline damage or not. (default: false)") orelse false;
     options.addOption(bool, "track_damage", track_damage);
@@ -37,6 +37,26 @@ pub fn build(b: *std.Build) void {
     const WorkspacesOptions = enum { hyprland, testing, none };
     const workspaces_provider = b.option(WorkspacesOptions, "workspaces-provider", "Which compositor the workspaces should be compiled for") orelse .hyprland;
     options.addOption(WorkspacesOptions, "workspaces_provider", workspaces_provider);
+
+    inline for (.{
+        "clock",
+        "workspaces",
+        "battery",
+    }) |widget| {
+        const enable_widget = b.option(bool, widget ++ "-enable", "Enable the " ++ widget ++ "                           (default: true)") orelse true;
+        const debug_widget = b.option(bool, widget ++ "-debug", "Enable all the debugging options for " ++ widget ++ " (default: false)") orelse false;
+        const enable_outlines = b.option(bool, widget ++ "-outlines", "Enable outlines for " ++ widget ++ "                  (default: debug-widget)") orelse debug_widget;
+        const verbose_logging = b.option(bool, widget ++ "-verbose", "Enable verbose logging for " ++ widget ++ "           (default: debug-widget)") orelse debug_widget;
+
+        if (!enable_widget and debug_widget) @panic("You have to enable to " ++ widget ++ " to debug it!");
+        if (!enable_widget and verbose_logging) @panic("You have to enable to " ++ widget ++ " to have it log verbosely it!");
+        if (!enable_widget and enable_outlines) @panic("You have to enable to " ++ widget ++ " to draw it's outline!");
+
+        options.addOption(bool, widget ++ "_enable", enable_widget);
+        options.addOption(bool, widget ++ "_debug", debug_widget);
+        options.addOption(bool, widget ++ "_outlines", enable_outlines);
+        options.addOption(bool, widget ++ "_verbose", verbose_logging);
+    }
 
     const exe_unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),

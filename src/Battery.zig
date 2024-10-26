@@ -1,16 +1,28 @@
+//! TODO: Battery verbose logging
+
 pub const Battery = @This();
 
-pub const battery_symbol: u21 = unicode.utf8Decode("") catch unreachable;
-pub const battery_path: []const u8 = "/tmp/BAT0/"; //"/sys/class/power_supply/BAT0/";
-pub const full_path: []const u8 = battery_path ++ "energy_full";
-pub const charge_path: []const u8 = battery_path ++ "energy_now";
-pub const status_path: []const u8 = battery_path ++ "status";
+const battery_symbol: u21 = unicode.utf8Decode("") catch unreachable;
+
+pub const default_battery_directory = "/sys/class/power_supply/";
+pub const default_battery_name = "BAT0";
+
+const full_file_name = "energy_full";
+const charge_file_name = "energy_now";
+const status_file_name = "status";
+
+/// The plus 1 is for the path seperator
+const max_file_name = @max(full_file_name.len, charge_file_name.len, status_file_name.len) + 1;
 
 background_color: Color,
 
 discharging_color: Color,
 charging_color: Color,
+
 critical_color: Color,
+
+critical_animation_percentage: u8 = 0,
+
 warning_color: Color,
 full_color: Color,
 
@@ -45,6 +57,9 @@ pub const NewArgs = struct {
     warning_color: Color,
     full_color: Color,
 
+    battery_name: []const u8,
+    battery_directory: []const u8,
+
     padding: u16 = 0,
 
     padding_north: ?u16 = null,
@@ -62,18 +77,58 @@ pub fn newWidget(allocator: Allocator, args: NewArgs) !*Widget {
 }
 
 pub fn init(args: NewArgs) !Battery {
-    const full_file = std.fs.openFileAbsolute(full_path, .{}) catch |err| {
-        log.err("Battery full file now found: {s}", .{@errorName(err)});
+    assert(args.battery_directory.len > 0);
+    assert(args.battery_name.len > 0);
+
+    const battery_directory_should_add_sep = args.battery_directory[args.battery_directory.len - 1] != fs.path.sep;
+
+    const battery_name_should_add_sep = args.battery_name[args.battery_name.len - 1] != fs.path.sep;
+
+    const path_length = args.battery_directory.len + @intFromBool(battery_directory_should_add_sep) + args.battery_name.len + @intFromBool(battery_name_should_add_sep) + max_file_name;
+
+    if (path_length > std.fs.max_path_bytes) {
+        log.err("provided battery directory and/or battery name makes path too long to be a valid path.", .{});
+        return error.PathTooLong;
+    }
+
+    var battery_path = BoundedArray(u8, std.fs.max_path_bytes){};
+
+    // base directory path
+    battery_path.appendSliceAssumeCapacity(args.battery_directory);
+    if (battery_directory_should_add_sep) battery_path.appendAssumeCapacity(fs.path.sep);
+
+    // battery file path
+    battery_path.appendSliceAssumeCapacity(args.battery_name);
+    if (battery_name_should_add_sep) battery_path.appendAssumeCapacity(fs.path.sep);
+
+    // the full file's name
+    battery_path.appendSliceAssumeCapacity(full_file_name);
+
+    const full_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
+        log.err("Failed to open Battery Full File with: {s}", .{@errorName(err)});
         return error.FullFileError;
     };
-    const charge_file = std.fs.openFileAbsolute(charge_path, .{}) catch |err| {
-        log.err("Battery charge file now found: {s}", .{@errorName(err)});
+    errdefer full_file.close();
+
+    // remove the full file's name, add the charge file's
+    battery_path.len -= @intCast(full_file_name.len);
+    battery_path.appendSliceAssumeCapacity(charge_file_name);
+
+    const charge_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
+        log.err("Failed to open Battery Charge File with: {s}", .{@errorName(err)});
         return error.ChargeFileError;
     };
-    const status_file = std.fs.openFileAbsolute(status_path, .{}) catch |err| {
-        log.err("Battery charge file now found: {s}", .{@errorName(err)});
-        return error.ChargeFileError;
+    errdefer full_file.close();
+
+    // remove the charge file, add status file.
+    battery_path.len -= @intCast(charge_file_name.len);
+    battery_path.appendSliceAssumeCapacity(status_file_name);
+
+    const status_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
+        log.err("Failed to open Battery Status File with: {s}", .{@errorName(err)});
+        return error.StatusFileError;
     };
+    errdefer full_file.close();
 
     var self = Battery{
         .background_color = args.background_color,
@@ -110,6 +165,7 @@ pub fn init(args: NewArgs) !Battery {
         },
     };
 
+    // set the area to find the progress area and everything.
     self.setArea(args.area);
 
     return self;
@@ -144,10 +200,11 @@ const max_status_length = 64;
 /// Returns the color the battery should be.
 /// fill_ratio should be the amount of charge,
 ///     maxInt(u8) meaning 100% full, 0 meaning 0% full
-fn getProgressColor(self: *const Battery, fill_ratio: u8) !Color {
+fn getProgressColor(self: *Battery, fill_ratio: u8) !Color {
     const max_int = maxInt(u8);
 
     try self.status_file.seekTo(0);
+
     const status_bb = try self.status_file.reader().readBoundedBytes(max_status_length);
     const status = mem.trim(u8, status_bb.constSlice(), &ascii.whitespace);
 
@@ -162,12 +219,17 @@ fn getProgressColor(self: *const Battery, fill_ratio: u8) !Color {
         log.warn("Unknown battery status: {s}", .{status});
     }
 
-    if (fill_ratio < max_int * 3 / 20) return self.critical_color;
+    if (fill_ratio < max_int * 3 / 20) {
+        self.critical_animation_percentage +%= 1;
+
+        return self.critical_color.withAlpha(self.critical_animation_percentage).composite(self.warning_color);
+    }
     if (fill_ratio < max_int * 6 / 20) return self.warning_color;
 
     return self.discharging_color;
 }
 
+// TODO: handle read errors
 pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     const battery_capacity = try readFileInt(u31, self.full_file);
     const battery_charge = @min(try readFileInt(u31, self.charge_file), battery_capacity);
@@ -185,6 +247,8 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     const should_redraw = draw_context.full_redraw or self.widget.full_redraw or !meta.eql(color, self.fill_color);
 
     if (should_redraw) {
+        log.debug("fill_ratio: {}/255", .{fill_ratio});
+
         self.widget.area.drawArea(draw_context, self.background_color);
 
         if (self.widget.area.removePadding(self.padding)) |area_after_padding| {
@@ -214,6 +278,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
         }
     } else switch (math.order(new_fill_pixels, self.fill_pixels)) {
         .gt => {
+            log.debug("fill_ratio: {}/255", .{fill_ratio});
             var progress_area = self.progress_area;
             progress_area.x += self.fill_pixels;
             progress_area.width = new_fill_pixels - self.fill_pixels;
@@ -221,6 +286,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             progress_area.drawArea(draw_context, color);
         },
         .lt => {
+            log.debug("fill_ratio: {}/255", .{fill_ratio});
             var progress_area = self.progress_area;
             progress_area.x += new_fill_pixels;
             progress_area.width = self.fill_pixels - new_fill_pixels;
@@ -266,6 +332,10 @@ pub fn setArea(self: *Battery, area: Rect) void {
     }
 }
 
+/// Renders the bitmap of the battery_symbol, then finds the inner box of the glyph for the progress bar.
+/// If the glyph isn't the normal one, this function may do something wacky.
+///
+/// Update or at least test if the glyph isn't ' '
 pub fn calculateProgressArea(self: *Battery) void {
     const glyph = freetype_context.loadChar(battery_symbol, self.battery_font_size, .render);
     const bitmap = glyph.bitmap_buffer.?;
@@ -387,6 +457,7 @@ const colors = @import("colors.zig");
 const Color = colors.Color;
 
 const std = @import("std");
+const fs = std.fs;
 const mem = std.mem;
 const math = std.math;
 const meta = std.meta;

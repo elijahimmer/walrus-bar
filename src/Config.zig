@@ -26,6 +26,9 @@ title: []const u8,
 
 background_color: Color,
 
+battery_name: []const u8,
+battery_directory: []const u8,
+
 font_size: u16,
 
 fn parse_argv(allocator: Allocator) Allocator.Error!Config {
@@ -64,6 +67,9 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .background_color = args.@"background-color" orelse all_colors.surface,
         .font_size = args.@"font-size" orelse 20,
 
+        .battery_name = args.@"battery-name" orelse default_battery_name,
+        .battery_directory = args.@"battery-directory" orelse default_battery_directory,
+
         .title = args.title orelse std.mem.span(std.os.argv[0]),
     };
 }
@@ -74,18 +80,37 @@ const help =
     \\-l, --height <INT>             The window's height (default: 28)
     \\-t, --title <STR>              The window's title
     \\-b, --background-color <COLOR> The background color in hex
-    \\-T, --text-color <COLOR>       The text color in hex (default)
+    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: ROSE)
     \\-f, --font-size <INT>          The font size in points
+    \\    --battery-name <STR>       The name of the battery in the battery-directory (default: "BAT0")
+    \\    --battery-directory <PATH> The absolute path to the battery directory (default: "/sys/class/power_supply/")
     \\
 ;
 
 const params = clap.parseParamsComptime(help);
 
 const parsers = .{
+    .PATH = pathParser,
     .STR = clap.parsers.string,
     .INT = clap.parsers.int(u16, 10),
     .COLOR = colors.str2Color,
 };
+
+const PathParserError = error{
+    PathTooLong,
+    PathNotAbsolute,
+};
+
+fn pathParser(path: []const u8) PathParserError![]const u8 {
+    if (path.len > std.fs.max_path_bytes) return error.PathTooLong;
+    if (!fs.path.isAbsolute(path)) return error.PathNotAbsolute;
+
+    return path;
+}
+
+const Battery = @import("Battery.zig");
+const default_battery_directory = Battery.default_battery_directory;
+const default_battery_name = Battery.default_battery_name;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
@@ -95,6 +120,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
 const exit = std.process.exit;
+const fs = std.fs;
 
 const Allocator = std.mem.Allocator;
 

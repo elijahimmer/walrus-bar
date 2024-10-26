@@ -270,7 +270,7 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
             return;
         };
 
-        //log.debug("Set active workspace: {}", .{new_active});
+        log.debug("Set active workspace: {}", .{new_active});
 
         state.rwlock.lock();
         defer state.rwlock.unlock();
@@ -296,7 +296,7 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
             return;
         };
 
-        //log.debug("Created workspace: {}", .{new_wksp});
+        log.debug("Created workspace: {}", .{new_wksp});
 
         state.rwlock.lock();
         defer state.rwlock.unlock();
@@ -313,7 +313,7 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
             return;
         };
 
-        //log.debug("Destroyed workspace: {}", .{wksp_to_destroy});
+        log.debug("Destroyed workspace: {}", .{wksp_to_destroy});
 
         state.rwlock.lock();
         defer state.rwlock.unlock();
@@ -337,13 +337,15 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
             log.warn("Hyprland destroyed non-existent workspace: {}", .{wksp_to_destroy});
         }
     } else {
-        //log.debug("unknown hyprland event: '{s}'>>'{s}'", .{ event, value });
+        log.debug("unknown hyprland event: '{s}'>>'{s}'", .{ event, value });
     }
 }
 
 test {
     std.testing.refAllDecls(@This());
 }
+
+const options = @import("options");
 
 const WorkspaceState = @import("WorkspaceState.zig");
 const WorkspaceArray = WorkspaceState.WorkspaceArray;
@@ -362,7 +364,7 @@ const posix = std.posix;
 const parseInt = fmt.parseInt;
 const assert = std.debug.assert;
 
-const log = std.log.scoped(.HyprlandWorker);
+const log = std.log.scoped(.WorkspacesWorker);
 
 const Stream = net.Stream;
 const Allocator = std.mem.Allocator;
