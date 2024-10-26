@@ -14,17 +14,15 @@ pub const Color = packed struct(u32) {
     }
 
     pub fn composite(bg: Color, fg: Color) Color {
-        const ratio = @as(f32, @floatFromInt(fg.a)) / 255.0;
-        const ratio_old = @max(1.0 - ratio, 0.0);
-
-        const r_fg, const g_fg, const b_fg = .{ @as(f32, @floatFromInt(fg.r)), @as(f32, @floatFromInt(fg.g)), @as(f32, @floatFromInt(fg.b)) };
-        const r_bg, const g_bg, const b_bg = .{ @as(f32, @floatFromInt(bg.r)), @as(f32, @floatFromInt(bg.g)), @as(f32, @floatFromInt(bg.b)) };
+        const ratio: u16 = fg.a;
+        assert(ratio <= maxInt(u8));
+        const ratio_old: u16 = @as(u16, maxInt(u8)) - ratio;
 
         return .{
-            .a = bg.a +| fg.a,
-            .r = @intFromFloat(ratio * r_fg + ratio_old * r_bg),
-            .g = @intFromFloat(ratio * g_fg + ratio_old * g_bg),
-            .b = @intFromFloat(ratio * b_fg + ratio_old * b_bg),
+            .a = fg.a +| bg.a,
+            .r = @intCast(fg.r * ratio / maxInt(u8) + bg.r * ratio_old / maxInt(u8)),
+            .g = @intCast(fg.g * ratio / maxInt(u8) + bg.g * ratio_old / maxInt(u8)),
+            .b = @intCast(fg.b * ratio / maxInt(u8) + bg.b * ratio_old / maxInt(u8)),
         };
     }
 
@@ -210,9 +208,16 @@ fn generate_color_list(obj: anytype) [@typeInfo(obj).Struct.decls.len]ColorListE
     return list;
 }
 
+test {
+    std.testing.refAllDecls(@This());
+    std.testing.refAllDecls(Color);
+}
+
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 
 const std = @import("std");
-const assert = std.debug.assert;
 const ascii = std.ascii;
+
+const maxInt = std.math.maxInt;
+const assert = std.debug.assert;
