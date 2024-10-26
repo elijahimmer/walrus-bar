@@ -37,15 +37,15 @@ pub fn build(b: *std.Build) void {
         const freetype_cache_size = b.option(usize, "freetype-cache-size", "The default glyph cache size in bytes (default: 16384)") orelse 16384;
         options.addOption(usize, "freetype_cache_size", freetype_cache_size);
 
-        const freetype_cache_logging = b.option(bool, "freetype-cache-logging", "Enable logging for the FreeType cache (default: false)") orelse false;
-        options.addOption(bool, "freetype_cache_logging", freetype_cache_logging);
+        const freetype_cache_logging = b.option(LogLevel, "freetype-cache-logging", "Enable logging for the FreeType cache (default: warn)") orelse .warn;
+        options.addOption(LogLevel, "freetype_cache_logging", freetype_cache_logging);
 
-        //const freetype_logging = b.option(bool, "freetype-logging", "Enable verbose logging for FreeType (default: false)") orelse false;
-        //options.addOption(bool, "freetype-logging", );
+        const freetype_logging = b.option(LogLevel, "freetype-logging", "Enable verbose logging for FreeType (default: warn)") orelse .warn;
+        options.addOption(LogLevel, "freetype_logging", freetype_logging);
     }
 
-    const registry_logging = b.option(bool, "registry_logging", "Enable Wayland Registry Logging (default: false)") orelse false;
-    options.addOption(bool, "registry_logging", registry_logging);
+    const registry_logging = b.option(LogLevel, "registry_logging", "Enable Wayland Registry Logging (default: warn)") orelse .warn;
+    options.addOption(LogLevel, "registry_logging", registry_logging);
 
     const track_damage = b.option(bool, "track-damage", "Enable damage outlines. (default: false)") orelse false;
     options.addOption(bool, "track_damage", track_damage);
@@ -62,16 +62,16 @@ pub fn build(b: *std.Build) void {
         const enable_widget = b.option(bool, widget ++ "-enable", "Enable the " ++ widget ++ "                           (default: true)") orelse true;
         const debug_widget = b.option(bool, widget ++ "-debug", "Enable all the debugging options for " ++ widget ++ " (default: false)") orelse false;
         const enable_outlines = b.option(bool, widget ++ "-outlines", "Enable outlines for " ++ widget ++ "                  (default: debug-widget)") orelse debug_widget;
-        const verbose_logging = b.option(bool, widget ++ "-verbose", "Enable verbose logging for " ++ widget ++ "           (default: debug-widget)") orelse debug_widget;
+        const verbose_logging = b.option(LogLevel, widget ++ "-logging", "Enable verbose logging for " ++ widget ++ "           (default: warn, debug if " ++ widget ++ "-debug is true)");
 
         if (!enable_widget and debug_widget) @panic("You have to enable to " ++ widget ++ " to debug it!");
-        if (!enable_widget and verbose_logging) @panic("You have to enable to " ++ widget ++ " to have it log verbosely it!");
+        if (!enable_widget and verbose_logging != null) @panic("You have to enable to " ++ widget ++ " to have it log verbosely it!");
         if (!enable_widget and enable_outlines) @panic("You have to enable to " ++ widget ++ " to draw it's outline!");
 
         options.addOption(bool, widget ++ "_enable", enable_widget);
         options.addOption(bool, widget ++ "_debug", debug_widget);
         options.addOption(bool, widget ++ "_outlines", enable_outlines);
-        options.addOption(bool, widget ++ "_verbose", verbose_logging);
+        options.addOption(LogLevel, widget ++ "_verbose", verbose_logging orelse if (debug_widget) .debug else .warn);
     }
 
     const exe_unit_tests = b.addTest(.{
@@ -137,3 +137,5 @@ pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_exe_unit_tests.step);
 }
+
+const LogLevel = enum { debug, info, warn, err };

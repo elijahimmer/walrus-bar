@@ -71,41 +71,49 @@ test {
 
 // build options
 const bo = @import("options");
+fn translateLogLevel(level: bo.@"build.LogLevel") std.log.Level {
+    return switch (level) {
+        .debug => .debug,
+        .info => .info,
+        .warn => .warn,
+        .err => .err,
+    };
+}
 pub const std_options = .{
     .log_scope_levels = &[_]std.log.ScopeLevel{
         // TODO: Find a good way to automate this...
         // Workspaces
         .{
             .scope = .Workspaces,
-            .level = if (bo.workspaces_verbose) .debug else .info,
+            .level = translateLogLevel(bo.workspaces_verbose),
         },
         .{
             .scope = .WorkspacesWorker,
-            .level = if (bo.workspaces_verbose) .debug else .info,
+            .level = translateLogLevel(bo.workspaces_verbose),
         },
         // Battery
         .{
             .scope = .Battery,
-            .level = if (bo.battery_verbose) .debug else .info,
+            .level = translateLogLevel(bo.battery_verbose),
         },
         // Clock
         .{
             .scope = .Clock,
-            .level = if (bo.clock_verbose) .debug else .info,
+            .level = translateLogLevel(bo.clock_verbose),
         },
         // FreeType
         .{
             .scope = .FreeTypeContext,
-            .level = if (bo.freetype_logging) .debug else .warn,
+            .level = translateLogLevel(bo.freetype_logging),
         },
         .{
             .scope = .@"FreeTypeContext-Cache",
-            .level = if (bo.freetype_cache_logging) .debug else .warn,
+            .level = translateLogLevel(bo.freetype_cache_logging),
         },
         // Registry
         .{
             .scope = .Registry,
-            .level = if (bo.registry_logging) .debug else .warn,
+            .level = translateLogLevel(bo.registry_logging),
         },
     },
 };

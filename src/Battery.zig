@@ -238,7 +238,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     assert(new_fill_pixels <= self.progress_area.width);
     defer self.fill_pixels = new_fill_pixels;
 
-    const fill_ratio: u8 = @intCast(maxInt(u8) * battery_charge / battery_capacity);
+    const fill_ratio: u8 = @intCast(@as(u64, maxInt(u8)) * battery_charge / battery_capacity);
 
     const color: Color = try self.getProgressColor(fill_ratio);
     defer self.fill_color = color;
