@@ -30,9 +30,10 @@ pub const Color = packed struct(u32) {
         const expect = std.testing.expect;
 
         const compos = @as(u32, @bitCast(composite(all_colors.black, all_colors.main)));
-        const color = @as(u32, @bitCast(all_colors.main));
+        try expect(@as(u32, @bitCast(all_colors.main)) == compos);
 
-        try expect(compos == color);
+        const compos_clear = @as(u32, @bitCast(composite(all_colors.black, all_colors.clear)));
+        try expect(@as(u32, @bitCast(all_colors.black)) == compos_clear);
     }
 };
 

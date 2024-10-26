@@ -288,19 +288,19 @@ pub fn loadChar(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: Lo
         ) catch unreachable;
     };
 
+    var char_slice: [4]u8 = undefined;
+
+    const bytes = unicode.utf8Encode(char, &char_slice) catch |err| switch (err) {
+        error.CodepointTooLarge, error.Utf8CannotEncodeSurrogateHalf => unreachable,
+    };
+
     if (cache_record.found_existing) {
         if (@intFromEnum(load_mode) <= @intFromEnum(cache_record.value_ptr.load_mode)) {
             return cache_record.value_ptr;
         }
-        //log.debug("Cached glyph had lower load_mode: '{s}', {s} vs {s}", .{ char_slice, @tagName(load_mode), @tagName(cache_hit.load_mode) });
+        cache_log.debug("Cached glyph had lower load_mode: '{s}', {s} -> {s}", .{ char_slice, @tagName(cache_record.value_ptr.load_mode), @tagName(load_mode) });
     } else {
-        var char_slice: [4]u8 = undefined;
-
-        const bytes = unicode.utf8Encode(char, &char_slice) catch |err| switch (err) {
-            error.CodepointTooLarge, error.Utf8CannotEncodeSurrogateHalf => unreachable,
-        };
-
-        log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice[0..bytes], font_size });
+        cache_log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice[0..bytes], font_size });
     }
 
     cache_record.value_ptr.* = self.loadCharNoCache(char, font_size, load_mode);
@@ -410,7 +410,10 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
 comptime {
     const total_glyphs = options.freetype_cache_size / @sizeOf(Glyph);
     if (total_glyphs < 50) {
-        @compileLog("Choosen freetype-cache-size is too small and will be inefficient");
+        @compileError("Choosen freetype-cache-size is too small and will be inefficient");
+    }
+    if (total_glyphs > 5000) {
+        @compileError("Choosen freetype-cache-size is too large and will be wasteful");
     }
 }
 
@@ -505,3 +508,4 @@ const BoundedArray = std.BoundedArray;
 
 const runtime_safety = std.debug.runtime_safety;
 const log = std.log.scoped(.FreeTypeContext);
+const cache_log = std.log.scoped(.@"FreeTypeContext-Cache");

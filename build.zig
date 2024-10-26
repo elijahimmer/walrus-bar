@@ -20,22 +20,38 @@ pub fn build(b: *std.Build) void {
     const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file (maybe larger than 5Mbs)?");
     font.addOption([]const u8, "font_data", font_data);
 
+    //
+    // TODO: Change all these logging to be log levels...
+    //       so don't be stupid...
+    //
+
     const options = b.addOptions();
-    const FreeTypeAllocatorOptions = enum { c, zig };
-    const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use (default: zig)") orelse .zig;
-    options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
+    { // freetype
+        const FreeTypeAllocatorOptions = enum { c, zig };
+        const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use (default: zig)") orelse .zig;
+        options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
 
-    const freetype_allocation_logging = b.option(bool, "freetype-allocation-logging", "Whether or not to log FreeType Allocations.") orelse false;
-    options.addOption(bool, "freetype_allocation_logging", freetype_allocation_logging);
+        const freetype_allocation_logging = b.option(bool, "freetype-allocation-logging", "Enable FreeType allocations logging (default: false)") orelse false;
+        options.addOption(bool, "freetype_allocation_logging", freetype_allocation_logging);
 
-    const freetype_cache_size = b.option(usize, "freetype-cache-size", "The default glyph cache size in bytes (default: 16384)") orelse 16384;
-    options.addOption(usize, "freetype_cache_size", freetype_cache_size);
+        const freetype_cache_size = b.option(usize, "freetype-cache-size", "The default glyph cache size in bytes (default: 16384)") orelse 16384;
+        options.addOption(usize, "freetype_cache_size", freetype_cache_size);
 
-    const track_damage = b.option(bool, "track-damage", "Whether to outline damage or not. (default: false)") orelse false;
+        const freetype_cache_logging = b.option(bool, "freetype-cache-logging", "Enable logging for the FreeType cache (default: false)") orelse false;
+        options.addOption(bool, "freetype_cache_logging", freetype_cache_logging);
+
+        //const freetype_logging = b.option(bool, "freetype-logging", "Enable verbose logging for FreeType (default: false)") orelse false;
+        //options.addOption(bool, "freetype-logging", );
+    }
+
+    const registry_logging = b.option(bool, "registry_logging", "Enable Wayland Registry Logging (default: false)") orelse false;
+    options.addOption(bool, "registry_logging", registry_logging);
+
+    const track_damage = b.option(bool, "track-damage", "Enable damage outlines. (default: false)") orelse false;
     options.addOption(bool, "track_damage", track_damage);
 
     const WorkspacesOptions = enum { hyprland, testing, none };
-    const workspaces_provider = b.option(WorkspacesOptions, "workspaces-provider", "Which compositor the workspaces should be compiled for") orelse .hyprland;
+    const workspaces_provider = b.option(WorkspacesOptions, "workspaces-provider", "Which compositor the workspaces should be compiled for (default: hyprland)") orelse .hyprland;
     options.addOption(WorkspacesOptions, "workspaces_provider", workspaces_provider);
 
     inline for (.{

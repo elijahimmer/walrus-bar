@@ -483,9 +483,11 @@ pub const DrawBitmapArgs = struct {
 
 /// Draws a bitmap onto the draw_context's screen in the given max_area.
 /// Any parts the extend past the max_area are not drawn.
+/// This does not damage the draw_context, but assumes the caller will.
 ///
 /// Returns immediately if the bitmap or the glyph's area have a zero height or width.
 pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
+    assert(args.glyph.load_mode == .render);
     assert(args.glyph.bitmap_buffer != null);
     const glyph = args.glyph;
 
@@ -523,6 +525,98 @@ pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
             );
         }
     }
+}
+
+test drawBitmap {
+    const allocator = std.testing.allocator;
+    const expect = std.testing.expect;
+
+    const window_area = Rect{
+        .x = 0,
+        .y = 0,
+        .width = 10,
+        .height = 10,
+    };
+
+    const draw_context = DrawContext{
+        .output_context = undefined,
+        .screen = try allocator.alloc(Color, window_area.width * window_area.height),
+        .window_area = window_area,
+        .current_area = window_area,
+    };
+    defer allocator.free(draw_context.screen);
+
+    @memset(draw_context.screen, colors.black);
+
+    const buffer = try allocator.alloc(u8, window_area.width * window_area.height);
+    defer allocator.free(buffer);
+    @memset(buffer, 0);
+
+    var glyph = FreeTypeContext.Glyph{
+        .metrics = undefined,
+        .advance_x = undefined,
+        .time = undefined,
+        .load_mode = .render,
+        .bitmap_top = 0,
+        .bitmap_left = 0,
+        .bitmap_width = window_area.width,
+        .bitmap_height = window_area.height,
+        .bitmap_buffer = buffer,
+    };
+
+    drawBitmap(&draw_context, .{
+        .glyph = &glyph,
+        .text_color = colors.main,
+        .max_area = window_area,
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    });
+
+    for (draw_context.screen) |pixel| {
+        try expect(@as(u32, @bitCast(pixel)) == @as(u32, @bitCast(colors.black)));
+    }
+
+    @memset(buffer, std.math.maxInt(u8));
+
+    drawBitmap(&draw_context, .{
+        .glyph = &glyph,
+        .text_color = colors.main,
+        .max_area = window_area,
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    });
+
+    for (draw_context.screen) |pixel| {
+        try expect(@as(u32, @bitCast(pixel)) == @as(u32, @bitCast(colors.main)));
+    }
+
+    const maxInt = std.math.maxInt;
+
+    @memset(buffer, maxInt(u8) / 2);
+
+    const result = colors.main.composite(colors.rose.withAlpha(maxInt(u8) / 2));
+
+    drawBitmap(&draw_context, .{
+        .glyph = &glyph,
+        .text_color = colors.rose,
+        .max_area = window_area,
+        .origin = .{
+            .x = 0,
+            .y = 0,
+        },
+    });
+
+    for (draw_context.screen) |pixel| {
+        try std.testing.expectEqual(@as(u32, @bitCast(pixel)), @as(u32, @bitCast(result)));
+    }
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }
 
 const WaylandContext = @import("WaylandContext.zig");

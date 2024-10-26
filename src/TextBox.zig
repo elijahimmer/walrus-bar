@@ -82,18 +82,19 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
             .max => |max_info| ((area.height << 6) - max_info.max_descent) - (self.padding_south << 6) - (1 << 6), // needs the - 1 so that it is more centered.
         };
 
+        // Get how wide the glyphs that don't need to be render are
         var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
         for (0..text_idx) |_| {
             const utf8_char = utf8_iter.nextCodepoint().?;
-            // use render here because we are about to draw it anyway, and no point
-            // of computing it multiple times.
-            const glyph = freetype_context.loadChar(utf8_char, font_size, .render);
+            // we only need the default here.
+            const glyph = freetype_context.loadChar(utf8_char, font_size, .default);
 
             pen_x += glyph.advance_x;
         }
 
-        assert(utf8_iter.i == text_idx);
+        assert(utf8_iter.i == text_idx); // it should have only looped up to the glyph that need to be rendered
 
+        // the max area the glyphs to be rendered should take up
         const complete_glyph_area = Rect{
             .x = @intCast(pen_x >> 6),
             .y = area.y,
@@ -107,7 +108,9 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
 
         draw_context.damage(complete_glyph_area);
 
+        // Actually render the glyphs
         while (utf8_iter.nextCodepoint()) |utf8_char| {
+            // render because we are about to do that.
             const glyph = freetype_context.loadChar(utf8_char, font_size, .render);
 
             draw_context.drawBitmap(.{
@@ -183,8 +186,8 @@ fn getFontSize(self: *TextBox) u32 {
             while (utf8_iter.nextCodepoint()) |utf8_char| {
                 const glyph = freetype_context.loadChar(utf8_char, area_height_used, .metrics);
 
-                const height = glyph.*.metrics.height;
-                const y_bearing = glyph.*.metrics.horiBearingY;
+                const height = glyph.metrics.height;
+                const y_bearing = glyph.metrics.horiBearingY;
 
                 ascent = @max(ascent, y_bearing);
                 descent = @max(descent, height - y_bearing);

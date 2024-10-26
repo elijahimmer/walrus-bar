@@ -93,6 +93,20 @@ pub const std_options = .{
             .scope = .Clock,
             .level = if (bo.clock_verbose) .debug else .info,
         },
+        // FreeType
+        .{
+            .scope = .FreeTypeContext,
+            .level = if (bo.freetype_logging) .debug else .warn,
+        },
+        .{
+            .scope = .@"FreeTypeContext-Cache",
+            .level = if (bo.freetype_cache_logging) .debug else .warn,
+        },
+        // Registry
+        .{
+            .scope = .Registry,
+            .level = if (bo.registry_logging) .debug else .warn,
+        },
     },
 };
 
