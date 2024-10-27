@@ -3,7 +3,7 @@ My third attempt at a wlroots/hyprland status bar.
 
 ## Fonts
 By default this embeds the Fira Nerd Font Mono font into the program,
-which is licensed separately (see #Dependencies), but you should be able to
+which is licensed separately (see [#Dependencies](#Dependencies)), but you should be able to
 compile in any font that is Unicode compatible.
 
 Runtime font selection via a cli arg is still planned for whenever I get to it.
@@ -25,6 +25,13 @@ Using this under the [Freetype License](https://freetype.org/license.html)
 
 I included both the core library (FreeType) and this to show where everything originates from.
 
+### [wayland](https://wayland.freedesktop.org/)
+This is used for wayland-scanner, libwayland-client. (you know, how it actually displays windows).
+
+Using it under the X11 license, similar to the MIT License.
+
+We also use several different Wayland protocols, which are licensed under MIT.
+
 ### [zig-clap](https://github.com/Hejsil/zig-clap/)
 A great Command Line Argument Parser.
 
@@ -34,13 +41,6 @@ Using it under MIT
 A great wayland protocol binding generator for zig.
 
 Using it under MIT
-
-### [wayland](https://wayland.freedesktop.org/)
-This is used for wayland-scanner, libwayland-client. (you know, how it actually displays windows).
-
-Using it under the X11 license, similar to the MIT License.
-
-We also use several different Wayland protocols, which are licensed under MIT.
 
 ## Tools Used
 ### [Zig](https://ziglang.org/)
