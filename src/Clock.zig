@@ -80,8 +80,9 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
                 .height = area_wo_padding.height,
                 .width = spacer_width,
             },
+            .transform = Transform.identity,
 
-            .outline = options.clock_outlines,
+            .bounding_box = options.clock_outlines,
 
             .char = self.spacer_char,
             .width = .{ .fixed = spacer_width },
@@ -129,7 +130,11 @@ pub fn getWidth(self: *Clock) u31 {
 
 fn getSpacerWidth(self: *Clock) u31 {
     const font_size = self.spacerFontSize();
-    const glyph = freetype_context.loadChar(self.spacer_char, font_size, .default);
+    const glyph = freetype_context.loadChar(self.spacer_char, .{
+        .font_size = font_size,
+        .load_mode = .default,
+        .transform = Transform.identity,
+    });
     const glyph_scaling = (glyph.advance_x >> 6) * 10 / 8;
     return glyph_scaling;
 }
@@ -269,11 +274,12 @@ const options = @import("options");
 const TextBox = @import("TextBox.zig");
 
 const DrawContext = @import("DrawContext.zig");
-const drawing = @import("drawing.zig");
 
 const FreeTypeContext = @import("FreeTypeContext.zig");
 const freetype_context = &FreeTypeContext.global;
 
+const drawing = @import("drawing.zig");
+const Transform = drawing.Transform;
 const Padding = drawing.Padding;
 const Widget = drawing.Widget;
 const Point = drawing.Point;

@@ -87,7 +87,11 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
         for (0..text_idx) |_| {
             const utf8_char = utf8_iter.nextCodepoint().?;
             // we only need the default here.
-            const glyph = freetype_context.loadChar(utf8_char, font_size, .default);
+            const glyph = freetype_context.loadChar(utf8_char, .{
+                .font_size = font_size,
+                .load_mode = .default,
+                .transform = Transform.identity,
+            });
 
             pen_x += glyph.advance_x;
         }
@@ -111,13 +115,19 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
         // Actually render the glyphs
         while (utf8_iter.nextCodepoint()) |utf8_char| {
             // render because we are about to do that.
-            const glyph = freetype_context.loadChar(utf8_char, font_size, .render);
+            const glyph = freetype_context.loadChar(utf8_char, .{
+                .font_size = font_size,
+                .load_mode = .render,
+                .transform = Transform.identity,
+            });
 
             draw_context.drawBitmap(.{
                 .origin = .{ .x = @intCast(pen_x >> 6), .y = @intCast(pen_y >> 6) },
                 .text_color = self.text_color,
                 .max_area = self.widget.area,
                 .glyph = glyph,
+
+                .no_alpha = false,
             });
 
             pen_x += glyph.advance_x;
@@ -149,7 +159,11 @@ pub fn getWidth(self: *TextBox) u31 {
     var width: u31 = 0;
     var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
     while (utf8_iter.nextCodepoint()) |utf8_char| {
-        const glyph = freetype_context.loadChar(utf8_char, font_size, .default);
+        const glyph = freetype_context.loadChar(utf8_char, .{
+            .font_size = font_size,
+            .load_mode = .default,
+            .transform = Transform.identity,
+        });
         width += glyph.advance_x;
     }
 
@@ -184,10 +198,15 @@ fn getFontSize(self: *TextBox) u32 {
             var descent: u63 = 0;
 
             while (utf8_iter.nextCodepoint()) |utf8_char| {
-                const glyph = freetype_context.loadChar(utf8_char, area_height_used, .metrics);
+                const glyph = freetype_context.loadChar(utf8_char, .{
+                    .font_size = area_height_used,
+                    .load_mode = .metrics,
+                    .transform = Transform.identity,
+                });
 
-                const height = glyph.metrics.height;
-                const y_bearing = glyph.metrics.horiBearingY;
+                // metrics is only null when transform != identity
+                const height = glyph.metrics.?.height;
+                const y_bearing = glyph.metrics.?.horiBearingY;
 
                 ascent = @max(ascent, y_bearing);
                 descent = @max(descent, height - y_bearing);
@@ -341,6 +360,7 @@ pub fn init(args: NewArgs) TextBox {
 }
 
 const drawing = @import("drawing.zig");
+const Transform = drawing.Transform;
 const Widget = drawing.Widget;
 const Rect = drawing.Rect;
 

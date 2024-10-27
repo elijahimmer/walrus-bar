@@ -84,7 +84,9 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
             freetype_context.drawChar(.{
                 .draw_context = draw_context,
 
-                .outline = options.workspaces_outlines,
+                .bounding_box = options.workspaces_outlines,
+
+                .transform = Transform.identity,
 
                 .text_color = self.text_color,
 
@@ -274,6 +276,7 @@ const FreeTypeContext = @import("../FreeTypeContext.zig");
 const freetype_context = &FreeTypeContext.global;
 
 const drawing = @import("../drawing.zig");
+const Transform = drawing.Transform;
 const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;

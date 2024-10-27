@@ -1,9 +1,14 @@
 //! A battery widget poll the battery and display it's charge.
+//! TODO: Outline the charging_symbol once that is implemented.
 
 pub const Battery = @This();
 
 /// The battery symbol to draw.
 const battery_symbol: u21 = unicode.utf8Decode("") catch unreachable;
+const battery_transform = Transform.identity;
+/// options: 󱐋 need to test both.
+const charging_symbol: u21 = unicode.utf8Decode("") catch unreachable;
+const charging_transform = Transform.right;
 /// How quickly the critical animation will go.
 /// 8 is pretty quick.
 const critical_animation_speed: u4 = 8;
@@ -48,6 +53,9 @@ critical_animation_percentage: u8 = 0,
 /// The color to display when the battery is low.
 warning_color: Color,
 
+/// The last drawn battery state.
+current_state: BatteryState,
+
 /// The color draw the battery.
 /// Changes depending on percent and status.
 fill_color: Color,
@@ -75,6 +83,10 @@ battery_font_size: u31,
 /// The width the battery takes up.
 /// Should always be up to date with the area.
 battery_width: u31,
+
+/// The font size of the charging symbol.
+/// Should always be up to date with the area.
+charging_font_size: u31,
 
 /// The padding area to not put anything in.
 padding: Padding,
@@ -197,9 +209,11 @@ pub fn init(args: NewArgs) !Battery {
         .warning_color = args.warning_color,
         .full_color = args.full_color,
 
+        .current_state = .discharging,
         .fill_color = undefined,
         .battery_font_size = undefined,
         .battery_width = undefined,
+        .charging_font_size = undefined,
 
         .fill_pixels = undefined,
 
@@ -265,10 +279,31 @@ fn readFileInt(comptime T: type, file: std.fs.File) !T {
     };
 }
 
+pub const BatteryState = enum {
+    full,
+    charging,
+    discharging,
+    warning,
+    critical,
+};
+
+fn stateToColor(self: *Battery, state: BatteryState) Color {
+    return switch (state) {
+        .full => self.full_color,
+        .charging => self.charging_color,
+        .discharging => self.discharging_color,
+        .warning => self.warning_color,
+        .critical => critical: {
+            self.critical_animation_percentage +%= critical_animation_speed;
+            break :critical self.critical_color.blend(self.warning_color, self.critical_animation_percentage);
+        },
+    };
+}
+
 /// Returns the color the battery should be.
 /// fill_ratio should be the amount of charge,
 ///     maxInt(u8) meaning 100% full, 0 meaning 0% full
-fn getProgressColor(self: *Battery, fill_ratio: u8) !Color {
+fn getBatteryState(self: *Battery, fill_ratio: u8) !BatteryState {
     const max_int = maxInt(u8);
 
     try self.status_file.seekTo(0);
@@ -277,24 +312,23 @@ fn getProgressColor(self: *Battery, fill_ratio: u8) !Color {
     const status = mem.trim(u8, status_bb.constSlice(), &ascii.whitespace);
 
     // TODO am I missing any status codes besides for "discharging"?
-    if (ascii.eqlIgnoreCase(status, "charging")) return self.charging_color;
-    if (ascii.eqlIgnoreCase(status, "full")) return self.full_color;
+    if (ascii.eqlIgnoreCase(status, "charging")) return .charging;
+    if (ascii.eqlIgnoreCase(status, "full")) return .full;
 
     // if it is not charging, and it is close to full, assume it is full.
-    if (ascii.eqlIgnoreCase(status, "not charging") and fill_ratio > max_int * 9 / 10) return self.full_color;
+    if (ascii.eqlIgnoreCase(status, "not charging")) {
+        if (fill_ratio > max_int * 9 / 10) return .full;
+        return .discharging;
+    }
 
     if (!ascii.eqlIgnoreCase(status, "discharging")) {
         log.warn("Unknown battery status: {s}", .{status});
     }
 
-    if (fill_ratio < max_int * 3 / 20) {
-        self.critical_animation_percentage +%= critical_animation_speed;
+    if (fill_ratio < max_int * 3 / 20) return .critical;
+    if (fill_ratio < max_int * 6 / 20) return .warning;
 
-        return self.critical_color.blend(self.warning_color, self.critical_animation_percentage);
-    }
-    if (fill_ratio < max_int * 6 / 20) return self.warning_color;
-
-    return self.discharging_color;
+    return .discharging;
 }
 
 /// Updates and draws what is needed
@@ -311,13 +345,17 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
     const fill_ratio: u8 = @intCast(@as(u64, maxInt(u8)) * battery_charge / battery_capacity);
 
-    const color: Color = try self.getProgressColor(fill_ratio);
+    const state: BatteryState = try self.getBatteryState(fill_ratio);
+    defer self.current_state = state;
+
+    const color = self.stateToColor(state);
     defer self.fill_color = color;
 
     const color_changed = @as(u32, @bitCast(color)) != @as(u32, @bitCast(self.fill_color));
+    const changed_to_from_charging = (self.current_state == .charging and state != .charging) or (self.current_state != .charging and state == .charging);
 
     // if the widget should to redraw, or if the color changed
-    const should_redraw = draw_context.full_redraw or self.widget.full_redraw or color_changed;
+    const should_redraw = draw_context.full_redraw or self.widget.full_redraw or color_changed or changed_to_from_charging;
 
     const inner_padding = Padding.uniform(self.inner_padding);
     const progress_area = self.progress_area.removePadding(inner_padding) orelse {
@@ -325,6 +363,10 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             // if there is no area to put the progress, then don't.
             self.widget.area.drawArea(draw_context, self.background_color);
             self.drawBattery(draw_context, area_after_padding, color);
+
+            if (state == .charging) {
+                self.drawCharging(draw_context, area_after_padding, self.full_color);
+            }
         }
         return;
     };
@@ -333,7 +375,9 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     assert(new_fill_pixels <= progress_area.width);
     defer self.fill_pixels = new_fill_pixels;
 
-    if (should_redraw) {
+    const is_charging_and_decreased = self.current_state == .charging and new_fill_pixels < self.fill_pixels;
+
+    if (should_redraw or is_charging_and_decreased) {
         log.debug("fill_ratio: {}/255", .{fill_ratio});
 
         self.widget.area.drawArea(draw_context, self.background_color);
@@ -342,15 +386,21 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
         self.progress_area.drawPadding(draw_context, self.background_color, inner_padding);
 
-        var filled_area = progress_area;
-
-        filled_area.width = new_fill_pixels;
-        filled_area.drawArea(draw_context, color);
-
         var unfilled_area = progress_area;
         unfilled_area.width = progress_area.width - new_fill_pixels;
         unfilled_area.x += new_fill_pixels;
         unfilled_area.drawArea(draw_context, self.background_color);
+
+        var filled_area = progress_area;
+
+        filled_area.width = new_fill_pixels;
+
+        if (state == .charging) {
+            self.drawCharging(draw_context, area_after_padding, self.full_color);
+            filled_area.drawAreaComposite(draw_context, color.withAlpha(240));
+        } else {
+            filled_area.drawArea(draw_context, color);
+        }
     } else switch (math.order(new_fill_pixels, self.fill_pixels)) {
         // add some
         .gt => {
@@ -359,10 +409,15 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             to_draw.x += self.fill_pixels;
             to_draw.width = new_fill_pixels - self.fill_pixels;
 
-            to_draw.drawArea(draw_context, color);
+            if (state == .charging) {
+                to_draw.drawAreaComposite(draw_context, color.withAlpha(240));
+            } else {
+                to_draw.drawArea(draw_context, color);
+            }
         },
         // remove some
         .lt => {
+            assert(state != .charging);
             log.debug("fill_ratio: {}/255", .{fill_ratio});
             var to_draw = progress_area;
             to_draw.x += new_fill_pixels;
@@ -376,7 +431,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 }
 
 /// Draw the battery character itself.
-fn drawBattery(self: *Battery, draw_context: *DrawContext, area_after_padding: Rect, color: Color) void {
+fn drawBattery(self: *const Battery, draw_context: *DrawContext, area_after_padding: Rect, color: Color) void {
     freetype_context.drawChar(.{
         .draw_context = draw_context,
 
@@ -385,10 +440,37 @@ fn drawBattery(self: *Battery, draw_context: *DrawContext, area_after_padding: R
 
         .font_size = self.battery_font_size,
 
-        .outline = false,
+        .bounding_box = false,
         .no_alpha = false,
 
+        .transform = battery_transform,
+
         .char = battery_symbol,
+
+        .hori_align = .center,
+        .vert_align = .center,
+
+        .width = .{ .fixed = self.battery_width },
+    });
+}
+
+/// Draw the charging character itself.
+fn drawCharging(self: *const Battery, draw_context: *DrawContext, area_after_padding: Rect, color: Color) void {
+    const draw_area = self.progress_area.center(area_after_padding.dims());
+    freetype_context.drawChar(.{
+        .draw_context = draw_context,
+
+        .text_color = color,
+        .area = draw_area,
+
+        .font_size = self.charging_font_size,
+
+        .bounding_box = false,
+        .no_alpha = false,
+
+        .transform = charging_transform,
+
+        .char = charging_symbol,
 
         .hori_align = .center,
         .vert_align = .center,
@@ -423,7 +505,7 @@ fn setAreaWidget(widget: *Widget, area: Rect) void {
 }
 
 /// Sets the area of the battery, and tells it to redraw.
-/// This also re-calculates the battery_font_size and battery_width
+/// This also re-calculates the battery and charging, font_size and width
 ///     if the area changed (and there is some area after padding)
 pub fn setArea(self: *Battery, area: Rect) void {
     if (meta.eql(area, self.widget.area)) return;
@@ -432,13 +514,34 @@ pub fn setArea(self: *Battery, area: Rect) void {
 
     if (area.removePadding(self.padding)) |area_after_padding| {
         // TODO: don't recalculate if you won't be able to make the size different.
-        const max = freetype_context.maximumFontSize(battery_symbol, area_after_padding);
+        {
+            const max = freetype_context.maximumFontSize(.{
+                .transform = battery_transform,
+                .area = area_after_padding,
+                .char = battery_symbol,
+                .scaling_fn = null,
+            });
 
-        self.battery_font_size = max.font_size;
-        self.battery_width = max.width;
+            self.battery_font_size = max.font_size;
+            self.battery_width = max.width;
+        }
 
+        {
+            const max = freetype_context.maximumFontSize(.{
+                .transform = charging_transform,
+                .area = area_after_padding,
+                .char = charging_symbol,
+                .scaling_fn = &chargingScaling,
+            });
+
+            self.charging_font_size = max.font_size;
+        }
         self.calculateProgressArea();
     }
+}
+
+fn chargingScaling(scale: u31) u31 {
+    return scale * 8 / 10;
 }
 
 /// Renders the bitmap of the battery_symbol, then finds the inner box of the glyph for the progress bar.
@@ -448,7 +551,11 @@ pub fn setArea(self: *Battery, area: Rect) void {
 ///
 /// TODO: try to make this function simpler... or atleast shorter...
 pub fn calculateProgressArea(self: *Battery) void {
-    const glyph = freetype_context.loadChar(battery_symbol, self.battery_font_size, .render);
+    const glyph = freetype_context.loadChar(battery_symbol, .{
+        .load_mode = .render,
+        .font_size = self.battery_font_size,
+        .transform = battery_transform,
+    });
     const bitmap = glyph.bitmap_buffer.?;
     const bitmap_width = glyph.bitmap_width;
     const bitmap_height = glyph.bitmap_height;
@@ -573,6 +680,7 @@ const freetype_context = &FreeTypeContext.global;
 const DrawContext = @import("DrawContext.zig");
 
 const drawing = @import("drawing.zig");
+const Transform = drawing.Transform;
 const Padding = drawing.Padding;
 const Widget = drawing.Widget;
 const Rect = drawing.Rect;

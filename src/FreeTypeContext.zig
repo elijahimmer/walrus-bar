@@ -1,6 +1,6 @@
 //! This manages the FreeType library's context, including allocations it makes.
 //!
-//! TODO: Implement caching, and see if that is needed. (maybe behind compile option)
+//! TODO: Implement glyph outline drawing
 //!
 
 pub const FreeTypeContext = @This();
@@ -28,6 +28,8 @@ pub const CacheKey = struct {
     char: u21,
     /// The pixel font size
     font_size: u32,
+    /// The glyph's transform
+    transform: Transform,
 };
 
 /// Stores a glyph, and it's bitmap (if needed);
@@ -35,12 +37,13 @@ pub const CacheKey = struct {
 pub const Glyph = struct {
     time: i64,
 
-    metrics: freetype.FT_Glyph_Metrics,
+    /// Metrics are invalid if a Transform is used.
+    metrics: ?freetype.FT_Glyph_Metrics,
 
     advance_x: u31,
 
-    bitmap_top: u31,
-    bitmap_left: u31,
+    bitmap_top: i32,
+    bitmap_left: i32,
 
     bitmap_width: u31,
     bitmap_height: u31,
@@ -48,28 +51,47 @@ pub const Glyph = struct {
 
     load_mode: LoadMode,
 
-    pub fn from(allocator: Allocator, glyph: freetype.FT_GlyphSlot, load_mode: LoadMode) Glyph {
+    transformed: bool,
+
+    pub fn from(allocator: Allocator, glyph: freetype.FT_GlyphSlot, load_mode: LoadMode, transform: Transform) Glyph {
         const bitmap = glyph.*.bitmap;
+        // TODO: When transformed to the left, the glyph's area is completely out of the box.
+
+        const transformed = !transform.isIdentity();
+
+        // change dimensions if it is rotated right or left.
+        const bitmap_width: u31 = @intCast(bitmap.width);
+        const bitmap_height: u31 = @intCast(bitmap.rows);
+        const bitmap_top: i32 = glyph.*.bitmap_top;
+        const bitmap_left: i32 = glyph.*.bitmap_left;
 
         const bitmap_buffer = if (load_mode == .render) bitmap_buffer: {
-            const bitmap_buffer = allocator.alloc(u8, bitmap.rows * bitmap.width) catch @panic("Out Of Memory");
-
-            @memcpy(bitmap_buffer, bitmap.buffer[0 .. bitmap.rows * bitmap.width]);
+            const bitmap_buffer = allocator.alloc(u8, bitmap_height * bitmap_width) catch @panic("Out Of Memory");
+            @memcpy(bitmap_buffer, bitmap.buffer[0 .. bitmap_height * bitmap_width]);
 
             break :bitmap_buffer bitmap_buffer;
         } else null;
 
         return .{
             .time = std.time.milliTimestamp(),
-            .metrics = glyph.*.metrics,
+            .metrics = if (transformed) null else glyph.*.metrics,
+            // TODO: Find out how to do transform for advance width, bitmap top, and bitmap left
             .advance_x = @intCast(glyph.*.advance.x),
-            .bitmap_top = @intCast(glyph.*.bitmap_top),
-            .bitmap_left = @intCast(glyph.*.bitmap_left),
-            .bitmap_width = @intCast(bitmap.width),
-            .bitmap_height = @intCast(bitmap.rows),
+            .bitmap_top = bitmap_top,
+            .bitmap_left = bitmap_left,
+            .bitmap_width = bitmap_width,
+            .bitmap_height = bitmap_height,
             .bitmap_buffer = bitmap_buffer,
             .load_mode = load_mode,
+            .transformed = transformed,
         };
+    }
+
+    pub fn deinit(self: *Glyph, allocator: Allocator) void {
+        if (self.bitmap_buffer) |bitmap_buffer| {
+            allocator.free(bitmap_buffer);
+        }
+        self.* = undefined;
     }
 };
 
@@ -149,9 +171,7 @@ pub fn deinit(self: *FreeTypeContext) void {
     var cache_iter = self.cache.valueIterator();
 
     while (cache_iter.next()) |glyph| {
-        if (glyph.bitmap_buffer) |buffer| {
-            self.allocator.free(buffer);
-        }
+        glyph.deinit(self.allocator);
     }
 
     self.cache.deinit();
@@ -206,6 +226,15 @@ pub const LoadMode = enum(u2) {
     render,
 };
 
+pub const MaximumFontSizeArgs = struct {
+    char: u21,
+    area: Rect,
+    transform: Transform,
+
+    /// Applies to new scale to downscale if wanted.
+    scaling_fn: ?*const fn (u31) u31,
+};
+
 pub const MaximumFontSizeReturn = struct {
     font_size: u31,
     width: u31,
@@ -215,30 +244,68 @@ pub const MaximumFontSizeReturn = struct {
 /// Returns the largest font size specified glyph can be to fit in the area.
 /// This loads the glyph twice, and does not cache the first load.
 /// The second load is cached with `LoadMode.metrics`
-pub fn maximumFontSize(self: *FreeTypeContext, char: u21, area: Rect) MaximumFontSizeReturn {
+pub fn maximumFontSize(self: *FreeTypeContext, args: MaximumFontSizeArgs) MaximumFontSizeReturn {
+    const area = args.area;
     const scale_initial = @min(area.width, area.height);
-    const metrics_initial = self.loadCharNoCache(char, scale_initial, .metrics).metrics;
+    const width_initial: u31, const height_initial: u31 = if (args.transform.isIdentity()) initial: {
+        const metrics_initial = self.loadCharNoCache(args.char, .{
+            .font_size = scale_initial,
+            .load_mode = .metrics,
+            .transform = args.transform,
+        }).metrics.?;
 
-    const width_initial: u31 = @intCast(metrics_initial.width >> 6);
-    const height_initial: u31 = @intCast(metrics_initial.height >> 6);
+        break :initial .{
+            @intCast(metrics_initial.width >> 6),
+            @intCast(metrics_initial.height >> 6),
+        };
+    } else initial: {
+        var glyph_initial = self.loadCharNoCache(args.char, .{
+            .font_size = scale_initial,
+            .load_mode = .render,
+            .transform = args.transform,
+        });
+        defer glyph_initial.deinit(self.allocator);
 
-    //log.debug("maximumFontSize :: area width: {}, height: {}", .{ area.width, area.height });
-    //log.debug("\tinitial width: {}, height: {}", .{ width_initial, height_initial });
+        break :initial .{
+            glyph_initial.bitmap_width,
+            glyph_initial.bitmap_height,
+        };
+    };
+
+    log.debug("maximumFontSize :: area width: {}, height: {}", .{ area.width, area.height });
+    log.debug("\tinitial width: {}, height: {}", .{ width_initial, height_initial });
 
     const width_scaling = area.width * area.width / width_initial;
     const height_scaling = area.height * area.height / height_initial;
 
-    const scale_new = @min(width_scaling, height_scaling);
+    const scaling = @min(width_scaling, height_scaling);
 
-    const metrics_new = self.loadChar(char, scale_new, .metrics).metrics;
+    const scale_new = if (args.scaling_fn) |scaling_fn| scaling_fn(scaling) else scaling;
 
-    const width_new: u31 = @intCast(metrics_new.width >> 6);
-    const height_new: u31 = @intCast(metrics_new.height >> 6);
+    const width_new: u31, const height_new: u31 = if (args.transform.isIdentity()) new: {
+        const metrics_initial = self.loadCharNoCache(args.char, .{
+            .font_size = scale_new,
+            .load_mode = .metrics,
+            .transform = args.transform,
+        }).metrics.?;
 
-    //log.debug("\tnew width: {}, height: {}", .{ width_new, height_new });
+        break :new .{
+            @intCast(metrics_initial.width >> 6),
+            @intCast(metrics_initial.height >> 6),
+        };
+    } else new: {
+        var glyph_new = self.loadCharNoCache(args.char, .{
+            .font_size = scale_initial,
+            .load_mode = .render,
+            .transform = args.transform,
+        });
+        defer glyph_new.deinit(self.allocator);
 
-    assert(width_new <= area.width);
-    assert(height_new <= area.height);
+        break :new .{
+            glyph_new.bitmap_width,
+            glyph_new.bitmap_height,
+        };
+    };
 
     return .{
         .font_size = scale_new,
@@ -247,12 +314,19 @@ pub fn maximumFontSize(self: *FreeTypeContext, char: u21, area: Rect) MaximumFon
     };
 }
 
+pub const LoadCharOptions = struct {
+    load_mode: LoadMode,
+    transform: Transform,
+    //rotation: Rotation,
+    font_size: u32,
+};
+
 /// Returns a pointer to a `Glyph`. This pointer may be invalidated after another call to loadChar,
 ///     and should not be stored.
 ///
 /// char_slice should be a single UTF8 Codepoint.
 ///
-pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, font_size: u32, load_mode: LoadMode) *Glyph {
+pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, args: LoadCharOptions) *Glyph {
     assert(char_slice.len > 0);
 
     if (unicode.utf8ByteSequenceLength(char_slice[0]) catch null) |len| {
@@ -265,27 +339,21 @@ pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, font_size: 
         break :utf8_char 0;
     };
 
-    return self.loadChar(utf8_char, font_size, load_mode);
+    return self.loadChar(utf8_char, args);
 }
 
 /// Returns a pointer to a `Glyph`. This pointer may be invalidated after another call to loadChar,
 ///     and should not be stored.
 ///
-pub fn loadChar(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: LoadMode) *Glyph {
-    // TODO: Implement cache clearing
-    const cache_record = self.cache.getOrPut(
-        .{
-            .char = char,
-            .font_size = font_size,
-        },
-    ) catch cache_record: {
+pub fn loadChar(self: *FreeTypeContext, char: u21, args: LoadCharOptions) *Glyph {
+    const cache_key = CacheKey{
+        .char = char,
+        .font_size = args.font_size,
+        .transform = args.transform,
+    };
+    const cache_record = self.cache.getOrPut(cache_key) catch cache_record: {
         self.cleanCache();
-        break :cache_record self.cache.getOrPut(
-            .{
-                .char = char,
-                .font_size = font_size,
-            },
-        ) catch unreachable;
+        break :cache_record self.cache.getOrPut(cache_key) catch unreachable;
     };
 
     var char_slice: [4]u8 = undefined;
@@ -295,38 +363,50 @@ pub fn loadChar(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: Lo
     };
 
     if (cache_record.found_existing) {
-        if (@intFromEnum(load_mode) <= @intFromEnum(cache_record.value_ptr.load_mode)) {
+        if (@intFromEnum(args.load_mode) <= @intFromEnum(cache_record.value_ptr.load_mode)) {
             return cache_record.value_ptr;
         }
-        cache_log.debug("Cached glyph had lower load_mode: '{s}', {s} -> {s}", .{ char_slice, @tagName(cache_record.value_ptr.load_mode), @tagName(load_mode) });
+        cache_log.debug("Cached glyph had lower load_mode: '{s}', {s} -> {s}", .{ char_slice, @tagName(cache_record.value_ptr.load_mode), @tagName(args.load_mode) });
     } else {
-        cache_log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice[0..bytes], font_size });
+        cache_log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice[0..bytes], args.font_size });
     }
 
-    cache_record.value_ptr.* = self.loadCharNoCache(char, font_size, load_mode);
+    cache_record.value_ptr.* = self.loadCharNoCache(char, args);
 
     return cache_record.value_ptr;
 }
 
-pub fn loadCharNoCache(self: *FreeTypeContext, char: u21, font_size: u32, load_mode: LoadMode) Glyph {
-    self.setFontPixelSize(font_size);
+pub fn loadCharNoCache(self: *FreeTypeContext, char: u21, args: LoadCharOptions) Glyph {
+    self.setFontPixelSize(args.font_size);
 
-    const freetype_flags: i32 = switch (load_mode) {
+    const freetype_flags: i32 = switch (args.load_mode) {
         .default => freetype.FT_LOAD_DEFAULT,
         .metrics => freetype.FT_LOAD_COMPUTE_METRICS,
         .render => freetype.FT_LOAD_RENDER | freetype.FT_LOAD_COMPUTE_METRICS,
     };
+
+    var ft_transform = freetype.FT_Matrix{
+        .xx = args.transform.xx,
+        .xy = args.transform.xy,
+        .yx = args.transform.yx,
+        .yy = args.transform.yy,
+    };
+
+    freetype.FT_Set_Transform(self.font_face, &ft_transform, null);
 
     const err = freetype.FT_Load_Char(self.font_face, char, freetype_flags);
 
     if (freetype_utils.isErr(err)) {
         freetype_utils.errorPrint(err, "Failed to load Glyph with", .{});
 
-        const err2 = freetype.FT_Load_Glyph(self.font_face, 0, freetype_flags);
-        freetype_utils.errorAssert(err2, "Failed to load replacement glyph!", .{});
+        // if it errors, load a replacement glyph
+        const err_rep = freetype.FT_Load_Glyph(self.font_face, 0, freetype_flags);
+        freetype_utils.errorAssert(err_rep, "Failed to load replacement Glyph with", .{});
     }
 
-    return Glyph.from(self.allocator, self.font_face.*.glyph, load_mode);
+    if (@intFromEnum(args.load_mode) >= @intFromEnum(LoadMode.render)) assert(self.font_face.*.glyph.*.bitmap.buffer != null);
+
+    return Glyph.from(self.allocator, self.font_face.*.glyph, args.load_mode, args.transform);
 }
 
 pub const DrawCharArgs = struct {
@@ -339,14 +419,17 @@ pub const DrawCharArgs = struct {
     /// Draw this character.
     char: u21,
 
-    /// Used to debug
-    outline: bool,
+    /// Draw all the debugging bounding boxes.
+    bounding_box: bool,
 
     /// Disable alpha, and just put color at full strength
     no_alpha: bool = false,
 
     /// At this font size.
     font_size: u32,
+
+    /// The transform of the bitmap
+    transform: Transform,
 
     /// How to align horizontally the glyph in the maximum area.
     hori_align: Align,
@@ -369,7 +452,11 @@ pub const DrawCharArgs = struct {
 /// Draw the given character
 /// Returns the width of the max area.
 pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
-    const glyph = freetype_context.loadChar(args.char, args.font_size, .render);
+    const glyph = freetype_context.loadChar(args.char, .{
+        .font_size = args.font_size,
+        .transform = args.transform,
+        .load_mode = .render,
+    });
 
     const glyph_dims = Point{
         .x = glyph.bitmap_width,
@@ -389,23 +476,29 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
 
     const glyph_area = max_glyph_area.alignWith(glyph_dims, args.hori_align, args.vert_align);
 
-    const glyph_height: u31 = @intCast(glyph.metrics.height >> 6);
-    const glyph_upper: u31 = @intCast(glyph.metrics.horiBearingY >> 6);
+    // Metrics are no updated with the transform.
+    const origin = if (glyph.metrics) |metrics| origin: {
+        const glyph_height: u31 = @intCast(metrics.height >> 6);
+        const glyph_upper: u31 = @intCast(metrics.horiBearingY >> 6);
 
-    const origin = Point{
-        .x = glyph_area.x - glyph.bitmap_left,
-        .y = glyph_area.y + glyph_area.height - glyph_height + glyph_upper,
+        break :origin Point{
+            .x = @intCast(glyph_area.x - glyph.bitmap_left),
+            .y = glyph_area.y + glyph_area.height - glyph_height + glyph_upper,
+        };
+    } else Point{
+        .x = @intCast(glyph_area.x - glyph.bitmap_left),
+        .y = glyph_area.y + glyph.*.bitmap_height,
     };
 
     args.draw_context.drawBitmap(.{
-        .origin = origin,
         .text_color = args.text_color,
-        .max_area = glyph_area,
-        .glyph = glyph,
         .no_alpha = args.no_alpha,
+        .max_area = glyph_area,
+        .origin = origin,
+        .glyph = glyph,
     });
 
-    if (args.outline) {
+    if (args.bounding_box) {
         max_glyph_area.drawOutline(args.draw_context, colors.love);
         glyph_area.drawOutline(args.draw_context, colors.border);
     }
@@ -467,8 +560,9 @@ fn cleanCache(self: *FreeTypeContext) void {
         }
     }
 
-    for (glyphs_to_remove.slice()) |glyph| {
-        assert(self.cache.remove(glyph.key));
+    for (glyphs_to_remove.slice()) |entry| {
+        var glyph = self.cache.fetchRemove(entry.key) orelse unreachable;
+        glyph.value.deinit(self.allocator);
     }
 }
 
@@ -481,6 +575,7 @@ const DrawContext = @import("DrawContext.zig");
 const Config = @import("Config.zig");
 
 const drawing = @import("drawing.zig");
+const Transform = drawing.Transform;
 const Align = drawing.Align;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
@@ -502,14 +597,15 @@ const FT_Memory = freetype.FT_Memory;
 
 const std = @import("std");
 const mem = std.mem;
-const assert = std.debug.assert;
-const unicode = std.unicode;
 
 const Allocator = mem.Allocator;
 const AutoHashMap = std.AutoHashMap;
 const FixedBufferAllocator = std.heap.FixedBufferAllocator;
 const BoundedArray = std.BoundedArray;
 
+const assert = std.debug.assert;
+const unicode = std.unicode;
 const runtime_safety = std.debug.runtime_safety;
+
 const log = std.log.scoped(.FreeTypeContext);
 const cache_log = std.log.scoped(.@"FreeTypeContext-Cache");

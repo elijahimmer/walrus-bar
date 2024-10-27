@@ -481,9 +481,11 @@ pub const DrawBitmapArgs = struct {
     /// The origin of the glyph (bottom right-ish)
     origin: Point,
 
+    /// Mainly used for debugging.
+    /// change dimensions if it is rotated right or left.
     /// Draw all pixels at full strength if there
     /// is any alpha in the bitmap.
-    no_alpha: bool = false,
+    no_alpha: bool,
 };
 
 /// Draws a bitmap onto the draw_context's screen in the given max_area.
@@ -499,8 +501,8 @@ pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
     if (glyph.bitmap_height == 0 or glyph.bitmap_width == 0) return;
 
     const glyph_area = Rect{
-        .x = args.origin.x + glyph.bitmap_left,
-        .y = args.origin.y -| glyph.bitmap_top,
+        .x = @intCast(args.origin.x + glyph.bitmap_left),
+        .y = @intCast(args.origin.y -| glyph.bitmap_top),
         .width = glyph.bitmap_width,
         .height = glyph.bitmap_height,
     };
@@ -607,8 +609,6 @@ test drawBitmap {
         try expect(@as(u32, @bitCast(pixel)) == @as(u32, @bitCast(colors.main)));
     }
 
-    const maxInt = std.math.maxInt;
-
     @memset(buffer, maxInt(u8) / 2);
 
     const result = colors.main.composite(colors.rose.withAlpha(maxInt(u8) / 2));
@@ -651,9 +651,9 @@ const Battery = @import("Battery.zig");
 const Clock = @import("Clock.zig");
 
 const drawing = @import("drawing.zig");
+const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
-const Widget = drawing.Widget;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
@@ -667,6 +667,8 @@ const meta = std.meta;
 const Allocator = std.mem.Allocator;
 const BoundedArray = std.BoundedArray;
 
-const log = std.log.scoped(.DrawContext);
 const panic = std.debug.panic;
 const assert = std.debug.assert;
+const maxInt = std.math.maxInt;
+
+const log = std.log.scoped(.DrawContext);

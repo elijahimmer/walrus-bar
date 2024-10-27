@@ -131,19 +131,16 @@ pub const Rect = struct {
 
     /// Inner is the width and height of the returned Rect.
     pub fn alignWith(self: Rect, inner: Point, hori_align: Align, vert_align: Align) Rect {
-        assert(self.width >= inner.x);
-        assert(self.height >= inner.y);
-
         const new_x = switch (hori_align) {
             .start => self.x,
             .end => self.x + self.width - inner.x,
-            .center => self.x + (self.width - inner.x) / 2,
+            .center => @as(u31, @intCast(self.x + @divFloor(@as(i32, self.width) - inner.x, 2))),
         };
 
         const new_y = switch (vert_align) {
             .start => self.y,
             .end => self.y + self.height - inner.y,
-            .center => self.y + (self.height - inner.y) / 2,
+            .center => @as(u31, @intCast(self.y + @divFloor(@as(i32, self.height) - inner.y, 2))),
         };
 
         return .{
@@ -246,6 +243,17 @@ pub const Rect = struct {
         }
     }
 
+    pub fn drawAreaComposite(self: Rect, draw_context: *const DrawContext, color: Color) void {
+        for (0..self.height) |y_coord| {
+            for (0..self.width) |x_coord| {
+                self.putComposite(draw_context, .{
+                    .x = @intCast(x_coord),
+                    .y = @intCast(y_coord),
+                }, color);
+            }
+        }
+    }
+
     pub fn damageArea(self: Rect, draw_context: *const DrawContext) void {
         draw_context.current_area.assertContains(self);
         draw_context.surface.?.damageBuffer(self.x, self.y, self.width, self.height);
@@ -312,6 +320,31 @@ pub const Rect = struct {
     }
 };
 
+pub const Transform = struct {
+    xx: i64,
+    xy: i64,
+    yx: i64,
+    yy: i64,
+
+    pub const identity = fromRadians(0.0);
+    pub const right = fromRadians(math.pi / 2.0);
+    pub const left = fromRadians(-math.pi / 2.0);
+    pub const upsidedown = fromRadians(math.pi);
+
+    pub fn fromRadians(radian: f32) Transform {
+        return .{
+            .xx = @intFromFloat(@cos(radian) * 0x10000),
+            .xy = @intFromFloat(-@sin(radian) * 0x10000),
+            .yx = @intFromFloat(@sin(radian) * 0x10000),
+            .yy = @intFromFloat(@cos(radian) * 0x10000),
+        };
+    }
+
+    pub fn isIdentity(self: Transform) bool {
+        return std.meta.eql(self, identity);
+    }
+};
+
 pub const Widget = struct {
     const VTable = struct {
         // TODO: Don't use anyerror here. It sucks.
@@ -361,6 +394,7 @@ const colors = @import("colors.zig");
 const Color = colors.Color;
 
 const std = @import("std");
+const math = std.math;
 
 const Allocator = std.mem.Allocator;
 
