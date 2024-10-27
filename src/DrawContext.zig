@@ -480,6 +480,10 @@ pub const DrawBitmapArgs = struct {
 
     /// The origin of the glyph (bottom right-ish)
     origin: Point,
+
+    /// Draw all pixels at full strength if there
+    /// is any alpha in the bitmap.
+    no_alpha: bool = false,
 };
 
 /// Draws a bitmap onto the draw_context's screen in the given max_area.
@@ -519,11 +523,19 @@ pub fn drawBitmap(draw_context: *const DrawContext, args: DrawBitmapArgs) void {
         for (x_start_local..x_start_local + used_area.width) |x_coord_local| {
             assert(x_coord_local <= glyph_area.width);
 
-            glyph_area.putComposite(
-                draw_context,
-                .{ .x = @intCast(x_coord_local), .y = @intCast(y_coord_local) },
-                args.text_color.withAlpha(bitmap_row[x_coord_local]),
-            );
+            const point = Point{ .x = @intCast(x_coord_local), .y = @intCast(y_coord_local) };
+
+            const alpha = bitmap_row[x_coord_local];
+
+            if (args.no_alpha) {
+                if (alpha > 0) glyph_area.putPixel(draw_context, point, args.text_color);
+            } else {
+                glyph_area.putComposite(
+                    draw_context,
+                    point,
+                    args.text_color.withAlpha(alpha),
+                );
+            }
         }
     }
 }

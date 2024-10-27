@@ -56,6 +56,13 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         exit(0);
     }
 
+    if (args.height != null and args.height.? < constants.MINIMUM_WINDOW_HEIGHT) {
+        std.io.getStdOut().writer().print("Height provided ({}) is smaller than minimum height ({})", .{ args.height.?, constants.MINIMUM_WINDOW_HEIGHT }) catch {
+            // what would be do here?
+        };
+        exit(1);
+    }
+
     return Config{
         .clap_res = res,
         .program_name = program_name,
@@ -75,7 +82,7 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
 const help =
     \\-h, --help                     Display this help and exit.
     \\-w, --width <INT>              The window's width (full screen if not specified)
-    \\-l, --height <INT>             The window's height (default: 28)
+    \\-l, --height <INT>             The window's height (minimum: 15) (default: 28)
     \\-t, --title <STR>              The window's title
     \\-b, --background-color <COLOR> The background color in hex
     \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: ROSE)
@@ -112,6 +119,8 @@ const default_battery_name = Battery.default_battery_name;
 const colors = @import("colors.zig");
 const Color = colors.Color;
 const all_colors = colors.all_colors;
+
+const constants = @import("constants.zig");
 
 const std = @import("std");
 const assert = std.debug.assert;

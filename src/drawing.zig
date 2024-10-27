@@ -29,6 +29,15 @@ pub const Padding = struct {
             .west = args.padding_west orelse args.padding,
         };
     }
+
+    pub fn uniform(padding: u16) Padding {
+        return .{
+            .north = padding,
+            .south = padding,
+            .east = padding,
+            .west = padding,
+        };
+    }
 };
 
 pub const Rect = struct {
@@ -145,7 +154,7 @@ pub const Rect = struct {
         };
     }
 
-    /// Remove the padding from each side of widget
+    /// Remove the padding from each side of Rect
     pub fn removePadding(self: Rect, padding: Padding) ?Rect {
         if (self.height < (padding.north + padding.south) or self.width < (padding.east + padding.west)) {
             return null;
@@ -157,6 +166,69 @@ pub const Rect = struct {
             .width = self.width - padding.east - padding.west,
             .height = self.height - padding.north - padding.south,
         };
+    }
+
+    /// Add padding to each side of the Rect
+    pub fn addPadding(self: Rect, padding: Padding) Rect {
+        assert(self.x >= padding.east);
+        assert(self.y >= padding.north);
+
+        return .{
+            .x = self.x - padding.east,
+            .y = self.y - padding.north,
+            .width = self.width + padding.east + padding.west,
+            .height = self.height + padding.north + padding.south,
+        };
+    }
+
+    pub const ReturnPaddingResult = struct {
+        north: Rect,
+        south: Rect,
+        east: Rect,
+        west: Rect,
+    };
+
+    pub fn returnPadding(self: Rect, padding: Padding) ReturnPaddingResult {
+        return .{
+            .north = .{
+                .x = self.x,
+                .y = self.y,
+                .width = self.width,
+                .height = padding.north,
+            },
+            .south = .{
+                .x = self.x,
+                .y = self.height - padding.south + self.y,
+                .width = self.width,
+                .height = padding.south,
+            },
+            .west = .{
+                .x = self.x,
+                .y = self.y + padding.north,
+                .width = padding.west,
+                .height = self.height - padding.north - padding.south,
+            },
+            .east = .{
+                .x = self.width - padding.east + self.x,
+                .y = self.y + padding.north,
+                .width = padding.east,
+                .height = self.height - padding.north - padding.south,
+            },
+        };
+    }
+
+    pub fn drawPadding(self: Rect, draw_context: *const DrawContext, color: Color, padding: Padding) void {
+        const rects = self.returnPadding(padding);
+
+        self.assertContains(rects.north);
+        self.assertContains(rects.south);
+        self.assertContains(rects.east);
+        self.assertContains(rects.west);
+
+        rects.north.drawArea(draw_context, color);
+        rects.west.drawArea(draw_context, color);
+        rects.east.drawArea(draw_context, color);
+        rects.south.drawArea(draw_context, color);
     }
 
     pub fn drawArea(self: Rect, draw_context: *const DrawContext, color: Color) void {

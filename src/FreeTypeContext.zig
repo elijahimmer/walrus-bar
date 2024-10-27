@@ -342,6 +342,9 @@ pub const DrawCharArgs = struct {
     /// Used to debug
     outline: bool,
 
+    /// Disable alpha, and just put color at full strength
+    no_alpha: bool = false,
+
     /// At this font size.
     font_size: u32,
 
@@ -399,6 +402,7 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
         .text_color = args.text_color,
         .max_area = glyph_area,
         .glyph = glyph,
+        .no_alpha = args.no_alpha,
     });
 
     if (args.outline) {

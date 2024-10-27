@@ -7,6 +7,9 @@ pub const WAYLAND_ZWLR_ANCHOR: zwlr.LayerSurfaceV1.Anchor = .{
     .right = true,
 };
 
+// If the window is too small, some stuff won't work.
+pub const MINIMUM_WINDOW_HEIGHT = 15;
+
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const zwlr = wayland.client.zwlr;

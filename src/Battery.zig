@@ -79,6 +79,10 @@ battery_width: u31,
 /// The padding area to not put anything in.
 padding: Padding,
 
+/// The padding between the battery and the progress_bar.
+inner_padding: u16,
+inner_padding_was_specified: bool,
+
 /// The inner widget for dynamic dispatch and generic fields.
 widget: Widget,
 
@@ -108,6 +112,10 @@ pub const NewArgs = struct {
 
     /// The directory to look up all the battery files in.
     battery_directory: []const u8,
+
+    /// The padding between the battery and the progress_bar.
+    /// If null, use default.
+    inner_padding: ?u16 = null,
 
     /// The general padding for each size.
     padding: u16 = 0,
@@ -140,7 +148,7 @@ pub fn init(args: NewArgs) !Battery {
     const path_length = args.battery_directory.len + @intFromBool(battery_directory_should_add_sep) + max_file_name;
 
     if (path_length > std.fs.max_path_bytes) {
-        log.err("provided battery directory and/or battery name makes path too long to be a valid path.", .{});
+        log.err("provided battery directory makes path too long to be a valid path.", .{});
         return error.PathTooLong;
     }
 
@@ -179,6 +187,7 @@ pub fn init(args: NewArgs) !Battery {
     };
     errdefer full_file.close();
 
+    // undefined fields because they will set before used on draw or the immediate setArea.
     var self = Battery{
         .background_color = args.background_color,
 
@@ -201,6 +210,8 @@ pub fn init(args: NewArgs) !Battery {
         .full_file = full_file,
 
         .padding = Padding.from(args),
+        .inner_padding = args.inner_padding orelse undefined,
+        .inner_padding_was_specified = args.inner_padding != null,
 
         .widget = .{
             .vtable = &.{
@@ -210,7 +221,14 @@ pub fn init(args: NewArgs) !Battery {
                 .getWidth = &Battery.getWidthWidget,
             },
 
-            .area = undefined,
+            // empty area so if the undefined ends being the same as
+            // the args.area setArea will still work.
+            .area = .{
+                .x = 0,
+                .y = 0,
+                .width = 0,
+                .height = 0,
+            },
         },
     };
 
@@ -283,16 +301,13 @@ fn getProgressColor(self: *Battery, fill_ratio: u8) !Color {
 /// TODO: handle read errors
 pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     const area_after_padding = self.widget.area.removePadding(self.padding) orelse return;
+
     var battery_capacity = try readFileInt(u31, self.full_file);
     const battery_charge = @min(try readFileInt(u31, self.charge_file), battery_capacity);
 
     // avoid divide by zero.
     // Do it after the battery_charge so if capacity is zero, it will show the battery as empty
     battery_capacity = @max(battery_capacity, 1);
-
-    const new_fill_pixels: u31 = @intCast(@as(u64, battery_charge) * self.progress_area.width / battery_capacity);
-    assert(new_fill_pixels <= self.progress_area.width);
-    defer self.fill_pixels = new_fill_pixels;
 
     const fill_ratio: u8 = @intCast(@as(u64, maxInt(u8)) * battery_charge / battery_capacity);
 
@@ -304,6 +319,20 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     // if the widget should to redraw, or if the color changed
     const should_redraw = draw_context.full_redraw or self.widget.full_redraw or color_changed;
 
+    const inner_padding = Padding.uniform(self.inner_padding);
+    const progress_area = self.progress_area.removePadding(inner_padding) orelse {
+        if (should_redraw) {
+            // if there is no area to put the progress, then don't.
+            self.widget.area.drawArea(draw_context, self.background_color);
+            self.drawBattery(draw_context, area_after_padding, color);
+        }
+        return;
+    };
+
+    const new_fill_pixels: u31 = @intCast(@as(u64, battery_charge) * progress_area.width / battery_capacity);
+    assert(new_fill_pixels <= progress_area.width);
+    defer self.fill_pixels = new_fill_pixels;
+
     if (should_redraw) {
         log.debug("fill_ratio: {}/255", .{fill_ratio});
 
@@ -311,27 +340,35 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
         self.drawBattery(draw_context, area_after_padding, color);
 
-        var progress_area = self.progress_area;
-        progress_area.width = new_fill_pixels;
-        progress_area.drawArea(draw_context, color);
+        self.progress_area.drawPadding(draw_context, self.background_color, inner_padding);
+
+        var filled_area = progress_area;
+
+        filled_area.width = new_fill_pixels;
+        filled_area.drawArea(draw_context, color);
+
+        var unfilled_area = progress_area;
+        unfilled_area.width = progress_area.width - new_fill_pixels;
+        unfilled_area.x += new_fill_pixels;
+        unfilled_area.drawArea(draw_context, self.background_color);
     } else switch (math.order(new_fill_pixels, self.fill_pixels)) {
         // add some
         .gt => {
             log.debug("fill_ratio: {}/255", .{fill_ratio});
-            var progress_area = self.progress_area;
-            progress_area.x += self.fill_pixels;
-            progress_area.width = new_fill_pixels - self.fill_pixels;
+            var to_draw = progress_area;
+            to_draw.x += self.fill_pixels;
+            to_draw.width = new_fill_pixels - self.fill_pixels;
 
-            progress_area.drawArea(draw_context, color);
+            to_draw.drawArea(draw_context, color);
         },
         // remove some
         .lt => {
             log.debug("fill_ratio: {}/255", .{fill_ratio});
-            var progress_area = self.progress_area;
-            progress_area.x += new_fill_pixels;
-            progress_area.width = self.fill_pixels - new_fill_pixels;
+            var to_draw = progress_area;
+            to_draw.x += new_fill_pixels;
+            to_draw.width = self.fill_pixels - new_fill_pixels;
 
-            progress_area.drawArea(draw_context, self.background_color);
+            to_draw.drawArea(draw_context, self.background_color);
         },
         // do nothing
         .eq => {},
@@ -349,6 +386,7 @@ fn drawBattery(self: *Battery, draw_context: *DrawContext, area_after_padding: R
         .font_size = self.battery_font_size,
 
         .outline = false,
+        .no_alpha = false,
 
         .char = battery_symbol,
 
@@ -412,17 +450,19 @@ pub fn setArea(self: *Battery, area: Rect) void {
 pub fn calculateProgressArea(self: *Battery) void {
     const glyph = freetype_context.loadChar(battery_symbol, self.battery_font_size, .render);
     const bitmap = glyph.bitmap_buffer.?;
+    const bitmap_width = glyph.bitmap_width;
+    const bitmap_height = glyph.bitmap_height;
 
     const alpha_max = math.maxInt(u8);
 
-    const mid_height = glyph.bitmap_height / 2;
-    const mid_width = glyph.bitmap_width / 2;
+    const mid_height = bitmap_height / 2;
+    const mid_width = bitmap_width / 2;
 
-    const middle_row = bitmap[mid_height * glyph.bitmap_width ..][0..glyph.bitmap_width];
+    const middle_row = bitmap[mid_height * bitmap_width ..][0..bitmap_width];
 
     // The inner left side of the glyph
     const left_side: u31 = left_side: {
-        const glyph_start = mem.indexOfScalar(u8, middle_row, math.maxInt(u8)) orelse @panic("Invalid battery symbol");
+        const glyph_start = mem.indexOfScalar(u8, middle_row, alpha_max) orelse @panic("Invalid battery symbol");
 
         for (middle_row[glyph_start..], 0..) |alpha, idx| {
             if (alpha < alpha_max) {
@@ -434,15 +474,15 @@ pub fn calculateProgressArea(self: *Battery) void {
 
     // the inner right side of the glyph
     const right_side: u31 = right_side: {
-        var glyph_end = mem.lastIndexOfScalar(u8, middle_row, math.maxInt(u8)) orelse @panic("Invalid battery symbol");
+        const glyph_end = mem.lastIndexOfScalar(u8, middle_row, alpha_max) orelse @panic("Invalid battery symbol");
 
         var reverse_iter = mem.reverseIterator(middle_row[0..glyph_end]);
 
-        while (reverse_iter.next()) |alpha| {
+        var idx: u31 = @intCast(glyph_end);
+        while (reverse_iter.next()) |alpha| : (idx -= 1) {
             if (alpha < alpha_max) {
-                break :right_side @intCast(glyph_end);
+                break :right_side @intCast(idx);
             }
-            glyph_end -= 1;
         }
         unreachable;
     };
@@ -450,18 +490,18 @@ pub fn calculateProgressArea(self: *Battery) void {
     // the inner top size of the glyph
     const top_side: u31 = top_side: {
         const glyph_start = glyph_start: {
-            var idx: usize = 0;
-            while (idx < glyph.bitmap_height) : (idx += 1) {
-                if (bitmap[idx * glyph.bitmap_width + mid_width] == alpha_max)
+            var idx: u31 = 0;
+            while (idx < bitmap_height) : (idx += 1) {
+                if (bitmap[idx * bitmap_width + mid_width] == alpha_max)
                     break :glyph_start idx;
             }
             unreachable;
         };
 
-        var idx: usize = glyph_start;
-        while (idx < glyph.bitmap_height) : (idx += 1) {
-            if (bitmap[idx * glyph.bitmap_width + mid_width] < alpha_max) {
-                break :top_side @intCast(idx);
+        var idx: u31 = glyph_start;
+        while (idx < bitmap_height) : (idx += 1) {
+            if (bitmap[idx * bitmap_width + mid_width] < alpha_max) {
+                break :top_side idx;
             }
         }
 
@@ -471,36 +511,44 @@ pub fn calculateProgressArea(self: *Battery) void {
     // the inner bottom side of the glyph
     const bottom_side: u31 = bottom_side: {
         const glyph_end = glyph_end: {
-            var idx: usize = glyph.bitmap_height - 1;
+            var idx: u31 = bitmap_height - 1;
             while (idx >= 0) : (idx -= 1) {
-                if (bitmap[idx * glyph.bitmap_width + mid_width] == alpha_max)
+                if (bitmap[idx * bitmap_width + mid_width] == alpha_max)
                     break :glyph_end idx;
             }
             unreachable;
         };
 
-        var idx: usize = glyph_end;
+        var idx: u31 = glyph_end;
         while (idx >= 0) : (idx -= 1) {
-            if (bitmap[idx * glyph.bitmap_width + mid_width] < alpha_max) {
-                break :bottom_side @intCast(idx + 1);
+            if (bitmap[idx * bitmap_width + mid_width] < alpha_max) {
+                break :bottom_side idx + 1;
             }
         }
 
         unreachable;
     };
 
+    const widget_area = self.widget.area.removePadding(self.padding) orelse return;
+
+    const glyph_area = widget_area.center(.{ .x = bitmap_width, .y = bitmap_height });
+
     const progress_area = Rect{
-        .x = self.widget.area.x + left_side + self.padding.west,
-        .y = self.widget.area.y + top_side + self.padding.north,
+        .x = glyph_area.x + left_side,
+        .y = glyph_area.y + top_side,
         .width = right_side - left_side,
         .height = bottom_side - top_side,
     };
-
-    log.debug("progress_area: {}, widget area: {}", .{ progress_area, self.widget.area });
+    self.progress_area = progress_area;
 
     self.widget.area.assertContains(progress_area);
 
-    self.progress_area = progress_area;
+    log.debug("progress_area: {}, widget area: {}", .{ progress_area, self.widget.area });
+
+    if (!self.inner_padding_was_specified) {
+        // this padding looks pretty nice.
+        self.inner_padding = math.log2_int(u31, progress_area.height) -| 1;
+    }
 }
 
 /// Widget translation function to get the battery's width
