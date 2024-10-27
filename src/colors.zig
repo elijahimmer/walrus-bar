@@ -13,6 +13,21 @@ pub const Color = packed struct(u32) {
         return new;
     }
 
+    //pub fn composite_fp(bg: Color, fg: Color) Color {
+    //    const ratio = @as(f32, @floatFromInt(fg.a)) / 255.0;
+    //    const ratio_old = @max(1.0 - ratio, 0.0);
+
+    //    const r_fg, const g_fg, const b_fg = .{ @as(f32, @floatFromInt(fg.r)), @as(f32, @floatFromInt(fg.g)), @as(f32, @floatFromInt(fg.b)) };
+    //    const r_bg, const g_bg, const b_bg = .{ @as(f32, @floatFromInt(bg.r)), @as(f32, @floatFromInt(bg.g)), @as(f32, @floatFromInt(bg.b)) };
+
+    //    return .{
+    //        .a = bg.a +| fg.a,
+    //        .r = @intFromFloat(ratio * r_fg + ratio_old * r_bg),
+    //        .g = @intFromFloat(ratio * g_fg + ratio_old * g_bg),
+    //        .b = @intFromFloat(ratio * b_fg + ratio_old * b_bg),
+    //    };
+    //}
+
     pub fn composite(bg: Color, fg: Color) Color {
         const ratio: u16 = fg.a;
         assert(ratio <= maxInt(u8));
@@ -20,9 +35,9 @@ pub const Color = packed struct(u32) {
 
         return .{
             .a = fg.a +| bg.a,
-            .r = @intCast(fg.r * ratio / maxInt(u8) + bg.r * ratio_old / maxInt(u8)),
-            .g = @intCast(fg.g * ratio / maxInt(u8) + bg.g * ratio_old / maxInt(u8)),
-            .b = @intCast(fg.b * ratio / maxInt(u8) + bg.b * ratio_old / maxInt(u8)),
+            .r = @intCast((fg.r * ratio >> 8) + (bg.r * ratio_old >> 8)),
+            .g = @intCast((fg.g * ratio >> 8) + (bg.g * ratio_old >> 8)),
+            .b = @intCast((fg.b * ratio >> 8) + (bg.b * ratio_old >> 8)),
         };
     }
 
@@ -34,6 +49,10 @@ pub const Color = packed struct(u32) {
 
         const compos_clear = @as(u32, @bitCast(composite(all_colors.black, all_colors.clear)));
         try expect(@as(u32, @bitCast(all_colors.black)) == compos_clear);
+    }
+
+    pub fn blend(a: Color, b: Color, ratio: u8) Color {
+        return a.composite(b.withAlpha(ratio));
     }
 };
 

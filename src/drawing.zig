@@ -168,10 +168,9 @@ pub const Rect = struct {
         const window_width = draw_context.window_area.width;
 
         for (y_min..y_max) |y_coord| {
-            for (x_min..x_max) |x_coord| {
-                draw_context.current_area.assertContainsPoint(.{ .x = @intCast(x_coord), .y = @intCast(y_coord) });
-                draw_context.screen[y_coord * window_width + x_coord] = color;
-            }
+            const screen_line = draw_context.screen[y_coord * window_width + x_min ..][0 .. x_max - x_min];
+
+            @memset(screen_line, color);
         }
     }
 

@@ -27,9 +27,9 @@ damage_prev: DamageList = damage_list_init,
 has_started: bool = false,
 full_redraw: bool = true,
 
-widget_left: ?Workspaces = null,
-widget_center: ?Clock = null,
-widget_right: ?Battery = null,
+widget_left: ?if (options.workspaces_enable) Workspaces else void = null,
+widget_center: ?if (options.clock_enable) Clock else void = null,
+widget_right: ?if (options.battery_enable) Battery else void = null,
 
 pub const OutputContext = struct {
     output: *wl.Output,
@@ -79,10 +79,10 @@ pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
     else
         log.debug("Output id #{} was deinited", .{draw_context.output_context.id});
 
-    if (draw_context.widget_left) |*widget_left| widget_left.deinit();
+    if (options.workspaces_enable) if (draw_context.widget_left) |*widget_left| widget_left.deinit();
     //// no clock deinit needed
-    // if (draw_context.widget_center) |*widget_center| widget_center.deinit();
-    if (draw_context.widget_right) |*widget_right| widget_right.deinit();
+    //if (options.clock_enable) if (draw_context.widget_center) |*widget_center| widget_center.deinit();
+    if (options.battery_enable) if (draw_context.widget_right) |*widget_right| widget_right.deinit();
 
     if (draw_context.shm_buffer) |shm_buffer| shm_buffer.destroy();
     if (draw_context.shm_fd) |shm_fd| posix.close(shm_fd);
@@ -193,7 +193,7 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
 }
 
 fn initWidgets(draw_context: *DrawContext) void {
-    { // clock
+    if (options.clock_enable) {
         var clock = Clock.init(.{
             .text_color = colors.rose,
             .spacer_color = colors.pine,
@@ -218,7 +218,7 @@ fn initWidgets(draw_context: *DrawContext) void {
         draw_context.widget_center = clock;
     }
 
-    workspaces: { // workspaces
+    if (options.workspaces_enable) workspaces: {
         var workspaces = Workspaces.init(.{
             .background_color = colors.surface,
             .text_color = colors.rose,
@@ -245,7 +245,7 @@ fn initWidgets(draw_context: *DrawContext) void {
         draw_context.widget_left = workspaces;
     }
 
-    battery: { // Battery
+    if (options.battery_enable) battery: {
         var battery = Battery.init(.{
             .background_color = colors.surface,
 
@@ -255,7 +255,6 @@ fn initWidgets(draw_context: *DrawContext) void {
             .warning_color = colors.rose,
             .full_color = colors.gold,
 
-            .battery_name = config.battery_name,
             .battery_directory = config.battery_directory,
 
             .padding = @as(u16, @intCast(draw_context.window_area.height / 10)),
@@ -442,9 +441,11 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
 
     inline for (.{ "widget_left", "widget_center", "widget_right" }) |name| {
         if (@field(draw_context, name)) |*w| {
-            draw_context.current_area = w.widget.area;
-            w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
-            w.widget.full_redraw = false;
+            if (@TypeOf(w) != *void) {
+                draw_context.current_area = w.widget.area;
+                w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
+                w.widget.full_redraw = false;
+            }
         }
     }
 

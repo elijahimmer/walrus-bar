@@ -26,7 +26,6 @@ title: []const u8,
 
 background_color: Color,
 
-battery_name: []const u8,
 battery_directory: []const u8,
 
 font_size: u16,
@@ -67,7 +66,6 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .background_color = args.@"background-color" orelse all_colors.surface,
         .font_size = args.@"font-size" orelse 20,
 
-        .battery_name = args.@"battery-name" orelse default_battery_name,
         .battery_directory = args.@"battery-directory" orelse default_battery_directory,
 
         .title = args.title orelse std.mem.span(std.os.argv[0]),
@@ -82,8 +80,7 @@ const help =
     \\-b, --background-color <COLOR> The background color in hex
     \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: ROSE)
     \\-f, --font-size <INT>          The font size in points
-    \\    --battery-name <STR>       The name of the battery in the battery-directory (default: "BAT0")
-    \\    --battery-directory <PATH> The absolute path to the battery directory (default: "/sys/class/power_supply/")
+    \\    --battery-directory <PATH> The absolute path to the battery directory (default: "/sys/class/power_supply/BAT0")
     \\
 ;
 
