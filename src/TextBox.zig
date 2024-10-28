@@ -55,13 +55,10 @@ scaling: ScalingTypeInfo,
 
 widget: Widget,
 
-pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
+fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     const self: *TextBox = @fieldParentPtr("widget", widget);
 
-    self.draw(draw_context);
-}
-
-pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
+    defer self.text_first_diff = null;
     const area = self.widget.area;
 
     const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
@@ -137,9 +134,6 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
             area.drawOutline(draw_context, colors.gold);
         }
     }
-
-    self.widget.full_redraw = false;
-    self.text_first_diff = null;
 }
 
 fn getWidthWidget(widget: *Widget) u31 {

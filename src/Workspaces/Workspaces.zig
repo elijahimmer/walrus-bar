@@ -58,17 +58,13 @@ pub fn setArea(self: *Workspaces, area: Rect) void {
     self.widget.full_redraw = true;
 }
 
-fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-
-    try self.draw(draw_context);
-}
-
 pub inline fn fontScalingFactor(height: u31) u31 {
     return height * 3 / 4;
 }
 
-pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
+fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
+    const self: *Workspaces = @fieldParentPtr("widget", widget);
+
     try self.updateState();
 
     const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
@@ -85,8 +81,11 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
     for (self.workspaces.slice(), 0..) |*wksp, idx| {
         const is_hovered = self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?;
         const was_hovered = self.hover_workspace_drawn != null and idx == self.hover_workspace_drawn.?;
+        const still_hovered = is_hovered and was_hovered;
 
-        if (full_redraw or wksp.should_redraw or is_hovered or was_hovered) {
+        if (full_redraw or wksp.should_redraw or (is_hovered or was_hovered) and !still_hovered) {
+            defer wksp.should_redraw = false;
+
             const background_color = if (is_hovered)
                 self.hover_workspace_background
             else if (wksp.id == self.active_workspace)
@@ -124,19 +123,18 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
             if (!full_redraw) {
                 draw_context.damage(wksp.area);
             }
-
-            wksp.should_redraw = false;
         }
     }
 
+    defer self.fill_background = false;
     // fill in the left-behinds
     if (self.fill_background and !full_redraw) {
-        var area = self.widget.area;
-
         const start = if (self.workspaces.len > 0)
-            self.workspaces.len * area.height
+            self.workspaces.len * self.widget.area.height
         else
             0;
+
+        var area = self.widget.area;
 
         assert(start < area.width);
 
@@ -146,9 +144,6 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
         area.drawArea(draw_context, self.background_color);
         draw_context.damage(area);
     }
-
-    self.fill_background = false;
-    self.widget.full_redraw = false;
 }
 
 fn getWorkspaceSymbol(self: *const Workspaces, idx: WorkspaceID) u21 {

@@ -383,6 +383,7 @@ pub const Widget = struct {
     full_redraw: bool = true,
 
     pub inline fn draw(self: *Widget, draw_context: *DrawContext) anyerror!void {
+        defer self.full_redraw = false;
         try self.vtable.draw(self, draw_context);
     }
 
@@ -403,17 +404,17 @@ pub const Widget = struct {
 
     /// Tells the widget the mouse has moved in
     pub inline fn motion(self: *Widget, point: Point) void {
+        defer self.last_motion = point;
         self.area.assertContainsPoint(point);
         if (self.vtable.motion) |motion_fn| {
             motion_fn(self, point);
         }
-        self.last_motion = point;
     }
 
     /// Tells the widget the mouse has moved in
     pub inline fn leave(self: *Widget) void {
+        defer self.last_motion = null;
         if (self.vtable.leave) |leave_fn| leave_fn(self);
-        self.last_motion = null;
     }
 
     pub inline fn click(self: *Widget, point: Point, button: MouseButton) void {

@@ -32,13 +32,9 @@ inline fn spacerFontSize(self: *const Clock) u31 {
 }
 
 /// conversion to draw from the widget vtable
-pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
+fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     const self: *Clock = @fieldParentPtr("widget", widget);
 
-    try self.draw(draw_context);
-}
-
-pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
     const tod = ctime.time(null);
     const localtime = ctime.localtime(&tod);
     assert(localtime != null);
@@ -53,15 +49,16 @@ pub fn draw(self: *Clock, draw_context: *DrawContext) !void {
     }
 
     self.hours_box.setText(&num2Char(@intCast(localtime.*.tm_hour)));
-    self.hours_box.draw(draw_context);
+    // there are no errors that can happen.
+    self.hours_box.widget.draw(draw_context) catch unreachable;
     const hours_width = self.hours_box.getWidth();
 
     self.minutes_box.setText(&num2Char(@intCast(localtime.*.tm_min)));
-    self.minutes_box.draw(draw_context);
+    self.minutes_box.widget.draw(draw_context) catch unreachable;
     const minutes_width = self.minutes_box.getWidth();
 
     self.seconds_box.setText(&num2Char(@intCast(localtime.*.tm_sec)));
-    self.seconds_box.draw(draw_context);
+    self.seconds_box.widget.draw(draw_context) catch unreachable;
 
     if (should_redraw) spacer_drawing: {
         const font_size = self.spacerFontSize();

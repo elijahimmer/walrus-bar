@@ -449,8 +449,7 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
         if (@field(draw_context, name)) |*w| {
             if (@TypeOf(w) != *void) {
                 draw_context.current_area = w.widget.area;
-                w.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
-                w.widget.full_redraw = false;
+                w.widget.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
             }
         }
     }
