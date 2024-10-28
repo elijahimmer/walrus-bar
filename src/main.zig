@@ -79,43 +79,9 @@ fn translateLogLevel(level: bo.@"build.LogLevel") std.log.Level {
         .err => .err,
     };
 }
+
 pub const std_options = .{
-    .log_scope_levels = &[_]std.log.ScopeLevel{
-        // TODO: Find a good way to automate this...
-        // Workspaces
-        .{
-            .scope = .Workspaces,
-            .level = translateLogLevel(bo.workspaces_verbose),
-        },
-        .{
-            .scope = .WorkspacesWorker,
-            .level = translateLogLevel(bo.workspaces_verbose),
-        },
-        // Battery
-        .{
-            .scope = .Battery,
-            .level = translateLogLevel(bo.battery_verbose),
-        },
-        // Clock
-        .{
-            .scope = .Clock,
-            .level = translateLogLevel(bo.clock_verbose),
-        },
-        // FreeType
-        .{
-            .scope = .FreeTypeContext,
-            .level = translateLogLevel(bo.freetype_logging),
-        },
-        .{
-            .scope = .@"FreeTypeContext-Cache",
-            .level = translateLogLevel(bo.freetype_cache_logging),
-        },
-        // Registry
-        .{
-            .scope = .Registry,
-            .level = translateLogLevel(bo.registry_logging),
-        },
-    },
+    .logFn = logFn,
 };
 
 const WaylandContext = @import("WaylandContext.zig");
@@ -128,6 +94,9 @@ const zwlr = wayland.client.zwlr;
 const Config = @import("Config.zig");
 
 const FreeTypeContext = @import("FreeTypeContext.zig");
+
+const logging = @import("logging.zig");
+const logFn = logging.logFn;
 
 const std = @import("std");
 

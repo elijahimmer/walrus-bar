@@ -16,7 +16,7 @@ pub fn errorPrint(err: c_int, comptime message: []const u8, args: anytype) void 
 
     const err_desc = if (freetype.FT_Error_String(err)) |err_str| std.mem.span(err_str) else "Unknown FreeType Error";
 
-    log.err(message ++ ": {s}", args ++ .{err_desc});
+    std.log.err(message ++ ": {s}", args ++ .{err_desc});
 }
 
 pub const AllocUser = struct {
@@ -34,7 +34,7 @@ pub const AllocUser = struct {
 };
 
 pub fn alloc(memory: FT_Memory, size_long: c_long) callconv(.C) ?*anyopaque {
-    if (options.freetype_allocation_logging) alloc_log.debug("alloc - len: {}", .{size_long});
+    alloc_log.debug("alloc - len: {}", .{size_long});
     assert(size_long > 0);
     assert(memory != null);
     assert(memory.*.user != null);
@@ -64,7 +64,7 @@ pub fn free(memory: FT_Memory, ptr: ?*anyopaque) callconv(.C) void {
         @panic("FreeType freed an unowned pointer");
     };
 
-    if (options.freetype_allocation_logging) alloc_log.debug("free - len: {}", .{allocation.len});
+    alloc_log.debug("free - len: {}", .{allocation.len});
 
     user.allocator.free(allocation);
 
@@ -92,7 +92,7 @@ pub fn realloc(memory: FT_Memory, cur_size_long: c_long, new_size_long: c_long, 
         @panic("FreeType resized an unowned pointer");
     };
 
-    if (options.freetype_allocation_logging) alloc_log.debug("realloc - actual_len: {}, cur_len: {}, new_len: {}", .{ allocation.len, cur_size, new_size });
+    alloc_log.debug("realloc - actual_len: {}, cur_len: {}, new_len: {}", .{ allocation.len, cur_size, new_size });
 
     assert(cur_size == allocation.len);
 
@@ -128,7 +128,7 @@ test "freetype allocator" {
 
     freetype.FT_Add_Default_Modules(freetype_lib);
 
-    log.info("freetype version: {}.{}.{}", .{ freetype.FREETYPE_MAJOR, freetype.FREETYPE_MINOR, freetype.FREETYPE_PATCH });
+    std.log.info("freetype version: {}.{}.{}", .{ freetype.FREETYPE_MAJOR, freetype.FREETYPE_MINOR, freetype.FREETYPE_PATCH });
 
     var font_face: freetype.FT_Face = undefined;
 
@@ -161,5 +161,4 @@ const assert = std.debug.assert;
 const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
-const log = std.log.scoped(.FreeType_utils);
-const alloc_log = std.log.scoped(.FreeType_alloc);
+const alloc_log = std.log.scoped(.FreeTypeAlloc);

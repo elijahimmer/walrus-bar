@@ -1,7 +1,3 @@
-const std = @import("std");
-
-const Scanner = @import("zig-wayland").Scanner;
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -26,26 +22,27 @@ pub fn build(b: *std.Build) void {
     //
 
     const options = b.addOptions();
+    const logging_options = b.addOptions();
     { // freetype
         const FreeTypeAllocatorOptions = enum { c, zig };
         const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use (default: zig)") orelse .zig;
         options.addOption(FreeTypeAllocatorOptions, "freetype_allocator", freetype_allocator);
 
-        const freetype_allocation_logging = b.option(bool, "freetype-allocation-logging", "Enable FreeType allocations logging (default: false)") orelse false;
-        options.addOption(bool, "freetype_allocation_logging", freetype_allocation_logging);
+        const freetype_allocation_logging = b.option(LogLevel, "freetype-allocation-logging", "Enable FreeType allocations logging (default: warn)") orelse .warn;
+        logging_options.addOption(LogLevel, "FreeTypeAlloc", freetype_allocation_logging);
 
         const freetype_cache_size = b.option(usize, "freetype-cache-size", "The default glyph cache size in bytes (default: 16384)") orelse 16384;
         options.addOption(usize, "freetype_cache_size", freetype_cache_size);
 
         const freetype_cache_logging = b.option(LogLevel, "freetype-cache-logging", "Enable logging for the FreeType cache (default: warn)") orelse .warn;
-        options.addOption(LogLevel, "freetype_cache_logging", freetype_cache_logging);
+        logging_options.addOption(LogLevel, "FreeTypeCache", freetype_cache_logging);
 
         const freetype_logging = b.option(LogLevel, "freetype-logging", "Enable verbose logging for FreeType (default: warn)") orelse .warn;
-        options.addOption(LogLevel, "freetype_logging", freetype_logging);
+        logging_options.addOption(LogLevel, "FreeTypeContext", freetype_logging);
     }
 
     const registry_logging = b.option(LogLevel, "registry_logging", "Enable Wayland Registry Logging (default: warn)") orelse .warn;
-    options.addOption(LogLevel, "registry_logging", registry_logging);
+    logging_options.addOption(LogLevel, "Registry", registry_logging);
 
     const track_damage = b.option(bool, "track-damage", "Enable damage outlines. (default: false)") orelse false;
     options.addOption(bool, "track_damage", track_damage);
@@ -59,19 +56,33 @@ pub fn build(b: *std.Build) void {
         "workspaces",
         "battery",
     }) |widget| {
-        const enable_widget = b.option(bool, widget ++ "-enable", "Enable the " ++ widget ++ "                           (default: true)") orelse true;
+        const disable_widget = b.option(bool, widget ++ "-disable", "Enable the " ++ widget ++ "                           (default: false)") orelse false;
         const debug_widget = b.option(bool, widget ++ "-debug", "Enable all the debugging options for " ++ widget ++ " (default: false)") orelse false;
         const enable_outlines = b.option(bool, widget ++ "-outlines", "Enable outlines for " ++ widget ++ "                  (default: debug-widget)") orelse debug_widget;
-        const verbose_logging = b.option(LogLevel, widget ++ "-logging", "Enable verbose logging for " ++ widget ++ "           (default: warn, debug if " ++ widget ++ "-debug is true)");
+        const verbose_logging = b.option(
+            LogLevel,
+            widget ++ "-logging",
+            "Enable verbose logging for " ++ widget ++ "           (default: warn, debug if " ++ widget ++ "-debug is true)",
+        );
 
-        if (!enable_widget and debug_widget) @panic("You have to enable to " ++ widget ++ " to debug it!");
-        if (!enable_widget and verbose_logging != null) @panic("You have to enable to " ++ widget ++ " to have it log verbosely it!");
-        if (!enable_widget and enable_outlines) @panic("You have to enable to " ++ widget ++ " to draw it's outline!");
+        if (disable_widget and debug_widget) @panic("You have to enable " ++ widget ++ " to debug it!");
+        if (disable_widget and verbose_logging != null) @panic("You have to enable " ++ widget ++ " to have it log verbosely it!");
+        if (disable_widget and enable_outlines) @panic("You have to enable " ++ widget ++ " to draw it's outline!");
 
-        options.addOption(bool, widget ++ "_enable", enable_widget);
+        options.addOption(bool, widget ++ "_disable", disable_widget);
         options.addOption(bool, widget ++ "_debug", debug_widget);
         options.addOption(bool, widget ++ "_outlines", enable_outlines);
-        options.addOption(LogLevel, widget ++ "_verbose", verbose_logging orelse if (debug_widget) .debug else .warn);
+
+        if (mem.eql(u8, widget, "workspaces")) {
+            logging_options.addOption(LogLevel, "WorkspacesWorker", verbose_logging orelse if (debug_widget) .debug else .warn);
+        }
+
+        // TODO: Find a nicer way to do this
+        var logging_name: [widget.len]u8 = undefined;
+        @memcpy(&logging_name, widget);
+        logging_name[0] = std.ascii.toUpper(logging_name[0]);
+
+        logging_options.addOption(LogLevel, &logging_name, verbose_logging orelse if (debug_widget) .debug else .warn);
     }
 
     const exe_unit_tests = b.addTest(.{
@@ -111,6 +122,7 @@ pub fn build(b: *std.Build) void {
         l.step.dependOn(&options.step);
         l.root_module.addOptions("font", font);
         l.root_module.addOptions("options", options);
+        l.root_module.addOptions("logging-options", logging_options);
 
         l.root_module.addImport("clap", clap.module("clap"));
 
@@ -139,3 +151,8 @@ pub fn build(b: *std.Build) void {
 }
 
 const LogLevel = enum { debug, info, warn, err };
+
+const std = @import("std");
+const mem = std.mem;
+
+const Scanner = @import("zig-wayland").Scanner;

@@ -17,12 +17,14 @@ cache_allocator_buffer: [options.freetype_cache_size]u8,
 
 internal: Internal,
 
+// Stores the internal FreeType allocation stuff.
 pub const Internal = struct {
     freetype_allocator: freetype.FT_MemoryRec_,
     alloc_user: freetype_utils.AllocUser,
 };
 
-pub const Cache = AutoHashMap(CacheKey, Glyph);
+pub const Cache = AutoArrayHashMap(CacheKey, Glyph);
+
 pub const CacheKey = struct {
     /// A unicode character
     char: u21,
@@ -168,10 +170,10 @@ pub fn deinit(self: *FreeTypeContext) void {
 
     self.internal.alloc_user.alloc_list.deinit(self.internal.alloc_user.allocator);
 
-    var cache_iter = self.cache.valueIterator();
+    var cache_iter = self.cache.iterator();
 
-    while (cache_iter.next()) |glyph| {
-        glyph.deinit(self.allocator);
+    while (cache_iter.next()) |entry| {
+        entry.value_ptr.deinit(self.allocator);
     }
 
     self.cache.deinit();
@@ -544,14 +546,14 @@ fn cleanCache(self: *FreeTypeContext) void {
             }) catch unreachable;
         }
 
-        mem.sort(CleanInfo, glyphs_to_remove.slice(), @as(void, undefined), CleanInfo.lessThan);
+        mem.sort(CleanInfo, glyphs_to_remove.slice(), {}, CleanInfo.lessThan);
 
         while (iter.next()) |entry| {
             const clean_info = CleanInfo{
                 .key = entry.key_ptr.*,
                 .time = entry.value_ptr.time,
             };
-            const lower_bound = std.sort.lowerBound(CleanInfo, clean_info, glyphs_to_remove.slice(), @as(void, undefined), CleanInfo.lessThan);
+            const lower_bound = std.sort.lowerBound(CleanInfo, clean_info, glyphs_to_remove.slice(), {}, CleanInfo.lessThan);
 
             if (lower_bound < num_to_remove) {
                 _ = glyphs_to_remove.pop();
@@ -561,7 +563,8 @@ fn cleanCache(self: *FreeTypeContext) void {
     }
 
     for (glyphs_to_remove.slice()) |entry| {
-        var glyph = self.cache.fetchRemove(entry.key) orelse unreachable;
+        // unreachable because they have to exist (we just found them).
+        var glyph = self.cache.fetchSwapRemove(entry.key) orelse unreachable;
         glyph.value.deinit(self.allocator);
     }
 }
@@ -599,7 +602,7 @@ const std = @import("std");
 const mem = std.mem;
 
 const Allocator = mem.Allocator;
-const AutoHashMap = std.AutoHashMap;
+const AutoArrayHashMap = std.AutoArrayHashMap;
 const FixedBufferAllocator = std.heap.FixedBufferAllocator;
 const BoundedArray = std.BoundedArray;
 
@@ -608,4 +611,4 @@ const unicode = std.unicode;
 const runtime_safety = std.debug.runtime_safety;
 
 const log = std.log.scoped(.FreeTypeContext);
-const cache_log = std.log.scoped(.@"FreeTypeContext-Cache");
+const cache_log = std.log.scoped(.FreeTypeCache);

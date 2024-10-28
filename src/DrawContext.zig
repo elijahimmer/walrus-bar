@@ -30,9 +30,9 @@ full_redraw: bool = true,
 last_motion: ?Point = null,
 
 // TODO: Remove these widgets and make a separate container struct for them.
-widget_left: ?if (options.workspaces_enable) Workspaces else void = null,
-widget_center: ?if (options.clock_enable) Clock else void = null,
-widget_right: ?if (options.battery_enable) Battery else void = null,
+widget_left: ?if (!options.workspaces_disable) Workspaces else void = null,
+widget_center: ?if (!options.clock_disable) Clock else void = null,
+widget_right: ?if (!options.battery_disable) Battery else void = null,
 
 pub const OutputContext = struct {
     output: *wl.Output,
@@ -82,10 +82,10 @@ pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
     else
         log.debug("Output id #{} was deinited", .{draw_context.output_context.id});
 
-    if (options.workspaces_enable) if (draw_context.widget_left) |*widget_left| widget_left.deinit();
+    if (!options.workspaces_disable) if (draw_context.widget_left) |*widget_left| widget_left.deinit();
     //// no clock deinit needed
-    //if (options.clock_enable) if (draw_context.widget_center) |*widget_center| widget_center.deinit();
-    if (options.battery_enable) if (draw_context.widget_right) |*widget_right| widget_right.deinit();
+    //if (!options.clock_disable) if (draw_context.widget_center) |*widget_center| widget_center.deinit();
+    if (!options.battery_disable) if (draw_context.widget_right) |*widget_right| widget_right.deinit();
 
     if (draw_context.shm_buffer) |shm_buffer| shm_buffer.destroy();
     if (draw_context.shm_fd) |shm_fd| posix.close(shm_fd);
@@ -196,7 +196,7 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
 }
 
 fn initWidgets(draw_context: *DrawContext) void {
-    if (options.clock_enable) {
+    if (!options.clock_disable) {
         var clock = Clock.init(.{
             .text_color = colors.rose,
             .spacer_color = colors.pine,
@@ -221,7 +221,7 @@ fn initWidgets(draw_context: *DrawContext) void {
         draw_context.widget_center = clock;
     }
 
-    if (options.workspaces_enable) workspaces: {
+    if (!options.workspaces_disable) workspaces: {
         var workspaces = Workspaces.init(.{
             .background_color = colors.surface,
             .text_color = colors.rose,
@@ -251,7 +251,7 @@ fn initWidgets(draw_context: *DrawContext) void {
         draw_context.widget_left = workspaces;
     }
 
-    if (options.battery_enable) battery: {
+    if (!options.battery_disable) battery: {
         var battery = Battery.init(.{
             .background_color = colors.surface,
 
