@@ -246,29 +246,6 @@ pub fn setArea(self: *TextBox, area: Rect) void {
     self.last_calculated_width = null;
 }
 
-fn motionWidget(widget: *Widget, point: Point) void {
-    const self: *TextBox = @fieldParentPtr("widget", widget);
-
-    self.motion(point);
-}
-
-pub fn motion(self: *TextBox, point: Point) void {
-    _ = self;
-    _ = point;
-    // TODO: Implement this.
-}
-
-fn leaveWidget(widget: *Widget) void {
-    const self: *TextBox = @fieldParentPtr("widget", widget);
-
-    self.leave();
-}
-
-pub fn leave(self: *TextBox) void {
-    _ = self;
-    // TODO: Implement this.
-}
-
 pub const SetColorsArgs = struct {
     background_color: Color,
     text_color: Color,
@@ -376,8 +353,9 @@ pub fn init(args: NewArgs) TextBox {
                 .deinit = &TextBox.deinitWidget,
                 .setArea = &TextBox.setAreaWidget,
                 .getWidth = &TextBox.getWidthWidget,
-                .motion = &TextBox.motionWidget,
-                .leave = &TextBox.leaveWidget,
+                .motion = null,
+                .leave = null,
+                .click = null,
             },
             .area = args.area,
         },

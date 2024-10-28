@@ -79,21 +79,22 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
 
     const font_size = fontScalingFactor(self.widget.area.height);
 
+    self.hover_workspace_idx = if (self.widget.last_motion) |lm| self.pointToWorkspaceIndex(lm) else null;
     defer self.hover_workspace_drawn = self.hover_workspace_idx;
 
     for (self.workspaces.slice(), 0..) |*wksp, idx| {
-        const newly_hovered = self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?;
-        const prev_hovered = self.hover_workspace_drawn != null and idx == self.hover_workspace_drawn.?;
+        const is_hovered = self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?;
+        const was_hovered = self.hover_workspace_drawn != null and idx == self.hover_workspace_drawn.?;
 
-        if (full_redraw or wksp.should_redraw or newly_hovered or prev_hovered) {
-            const background_color = if (self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?)
+        if (full_redraw or wksp.should_redraw or is_hovered or was_hovered) {
+            const background_color = if (is_hovered)
                 self.hover_workspace_background
             else if (wksp.id == self.active_workspace)
                 self.active_workspace_background
             else
                 self.background_color;
 
-            const text_color = if (self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?)
+            const text_color = if (is_hovered)
                 self.hover_workspace_text
             else if (wksp.id == self.active_workspace)
                 self.active_workspace_text
@@ -231,25 +232,17 @@ fn pointToWorkspaceIndex(self: *Workspaces, point: Point) ?WorkspaceIndex {
     return @intCast(workspace_idx);
 }
 
-fn motionWidget(widget: *Widget, point: Point) void {
+fn clickWidget(widget: *Widget, point: Point, button: MouseButton) void {
     const self: *Workspaces = @fieldParentPtr("widget", widget);
 
-    self.motion(point);
-}
+    if (button != .left_click) return;
 
-pub fn motion(self: *Workspaces, point: Point) void {
-    self.hover_workspace_idx = self.pointToWorkspaceIndex(point);
-}
-
-fn leaveWidget(widget: *Widget) void {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-
-    self.leave();
-}
-
-pub fn leave(self: *Workspaces) void {
-    self.hover_workspace_idx = null;
-    // TODO: Implement this.
+    if (self.pointToWorkspaceIndex(point)) |wksp_idx| {
+        const wksp = self.workspaces.get(wksp_idx);
+        WorkspaceState.setWorkspace(wksp.id) catch |err| {
+            log.warn("Failed to set workspace with: {s}", .{@errorName(err)});
+        };
+    }
 }
 
 pub const NewArgs = struct {
@@ -307,8 +300,10 @@ pub fn init(args: NewArgs) !Workspaces {
                 .deinit = &Workspaces.deinitWidget,
                 .setArea = &Workspaces.setAreaWidget,
                 .getWidth = &Workspaces.getWidthWidget,
-                .motion = &Workspaces.motionWidget,
-                .leave = &Workspaces.leaveWidget,
+                // no motion or leave, all we need is last_motion.
+                .motion = null,
+                .leave = null,
+                .click = &Workspaces.clickWidget,
             },
         },
     };
@@ -325,6 +320,9 @@ pub fn deinit(self: *Workspaces) void {
     workspace_state.deinit();
     self.* = undefined;
 }
+
+const seat_utils = @import("../seat_utils.zig");
+const MouseButton = seat_utils.MouseButton;
 
 const WorkspaceState = @import("WorkspaceState.zig");
 const WorkspaceIndex = WorkspaceState.WorkspaceIndex;

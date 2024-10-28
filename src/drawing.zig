@@ -368,8 +368,9 @@ pub const Widget = struct {
         setArea: *const fn (*Widget, Rect) void,
         getWidth: *const fn (*Widget) u31,
 
-        motion: *const fn (*Widget, Point) void,
-        leave: *const fn (*Widget) void,
+        motion: ?*const fn (*Widget, Point) void,
+        leave: ?*const fn (*Widget) void,
+        click: ?*const fn (*Widget, Point, MouseButton) void,
     };
     vtable: *const VTable,
 
@@ -402,14 +403,21 @@ pub const Widget = struct {
 
     /// Tells the widget the mouse has moved in
     pub inline fn motion(self: *Widget, point: Point) void {
-        self.area.assertContainsPoint(Point);
-        self.vtable.motion(self, point);
+        self.area.assertContainsPoint(point);
+        if (self.vtable.motion) |motion_fn| {
+            motion_fn(self, point);
+        }
         self.last_motion = point;
     }
 
     /// Tells the widget the mouse has moved in
     pub inline fn leave(self: *Widget) void {
-        self.vtable.motion(self);
+        if (self.vtable.leave) |leave_fn| leave_fn(self);
+        self.last_motion = null;
+    }
+
+    pub inline fn click(self: *Widget, point: Point, button: MouseButton) void {
+        if (self.vtable.click) |click_fn| click_fn(self, point, button);
     }
 
     pub fn getParent(self: *Widget, T: type) *T {
@@ -418,6 +426,9 @@ pub const Widget = struct {
 };
 
 pub const Align = enum { start, center, end };
+
+const seat_utils = @import("seat_utils.zig");
+const MouseButton = seat_utils.MouseButton;
 
 const DrawContext = @import("DrawContext.zig");
 const freetype_context = &@import("FreeTypeContext.zig").global;

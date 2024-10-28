@@ -77,17 +77,21 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
         .button => |button| {
             if (button.state != .pressed) return;
 
-            switch (@as(MouseButtons, @enumFromInt(button.button))) {
+            switch (@as(MouseButton, @enumFromInt(button.button))) {
                 .middle_click => {
                     wayland_context.running = false;
                 },
-                .left_click, .right_click => {
+                .right_click => {
                     for (wayland_context.outputs.items) |*output| {
                         output.full_redraw = true;
                     }
                 },
-                _ => {
-                    log.debug("unknown button pressed: {}", .{button.button});
+                else => {
+                    if (wayland_context.last_motion_surface) |draw_context| {
+                        draw_context.click(@enumFromInt(button.button));
+                    } else {
+                        log_local.warn("Cursor motion but not on a surface?", .{});
+                    }
                 },
             }
         },
@@ -96,7 +100,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
     }
 }
 
-pub const MouseButtons = enum(u16) {
+pub const MouseButton = enum(u16) {
     left_click = 272,
     right_click = 273,
     middle_click = 274,

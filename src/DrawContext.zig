@@ -646,10 +646,10 @@ pub fn motion(draw_context: *DrawContext, point: Point) void {
         if (@field(draw_context, widget_name)) |*widget| {
             const area = widget.widget.area;
             if (last_motion) |lm| {
-                if (area.containsPoint(lm) and !area.containsPoint(point)) widget.leave();
-                if (!area.containsPoint(lm) and area.containsPoint(point)) widget.motion(point);
+                if (area.containsPoint(lm) and !area.containsPoint(point)) widget.widget.leave();
+                if (!area.containsPoint(lm) and area.containsPoint(point)) widget.widget.motion(point);
             }
-            if (area.containsPoint(point)) widget.motion(point);
+            if (area.containsPoint(point)) widget.widget.motion(point);
         }
     }
 }
@@ -664,8 +664,9 @@ pub fn leave(draw_context: *DrawContext) void {
         if (draw_context.last_motion) |last_motion| {
             if (@field(draw_context, widget_name)) |*widget| {
                 if (widget.widget.area.containsPoint(last_motion)) {
+                    // make sure no widgets overlap
                     assert(!left);
-                    widget.leave();
+                    widget.widget.leave();
                     left = true;
                 }
             }
@@ -674,9 +675,30 @@ pub fn leave(draw_context: *DrawContext) void {
     draw_context.last_motion = null;
 }
 
+pub fn click(draw_context: *DrawContext, button: MouseButton) void {
+    var left = false;
+    inline for (.{
+        "widget_left",
+        "widget_center",
+        "widget_right",
+    }) |widget_name| {
+        if (draw_context.last_motion) |last_motion| {
+            if (@field(draw_context, widget_name)) |*widget| {
+                if (widget.widget.area.containsPoint(last_motion)) {
+                    assert(!left);
+                    widget.widget.click(draw_context.last_motion.?, button);
+                    left = true;
+                }
+            }
+        }
+    }
+}
+
 test {
     std.testing.refAllDecls(@This());
 }
+const seat_utils = @import("seat_utils.zig");
+const MouseButton = seat_utils.MouseButton;
 
 const WaylandContext = @import("WaylandContext.zig");
 const FreeTypeContext = @import("FreeTypeContext.zig");

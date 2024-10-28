@@ -45,6 +45,10 @@ pub fn deinit(self: *WorkspaceState) void {
     }
 }
 
+pub fn setWorkspace(workspace_id: WorkspaceID) !void {
+    try Impl.setWorkspace(workspace_id);
+}
+
 pub const RC = u32;
 pub const WorkspaceIndex = u4;
 pub const max_workspace_count = std.math.maxInt(WorkspaceIndex);

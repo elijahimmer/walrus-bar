@@ -341,6 +341,10 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
     }
 }
 
+pub fn setWorkspace(wksp_id: WorkspaceID) !void {
+    _ = try sendHyprCommand(0, .{ .move_to_workspace = wksp_id });
+}
+
 test {
     std.testing.refAllDecls(@This());
 }

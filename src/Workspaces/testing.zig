@@ -54,6 +54,10 @@ pub fn available() bool {
     return true;
 }
 
+pub fn setWorkspace(wksp_id: WorkspaceID) !void {
+    _ = wksp_id;
+}
+
 const WorkspaceState = @import("WorkspaceState.zig");
 const WorkspaceID = WorkspaceState.WorkspaceID;
 const max_workspaces_count = @import("Workspaces.zig").max_workspaces_count;
