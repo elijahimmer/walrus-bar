@@ -6,10 +6,14 @@ pub const Battery = @This();
 /// The battery symbol to draw.
 const battery_symbol: u21 = unicode.utf8Decode("") catch unreachable;
 const battery_transform = Transform.identity;
+
 /// options: 󱐋 need to test both.
 const charging_symbol: u21 = unicode.utf8Decode("") catch unreachable;
+/// Turn it right 90 degrees
 const charging_transform = Transform.right;
-const charging_progress_area_alpha: u8 = 240;
+/// The alpha for the progress area when it is charging,
+///     so the charging glyph shows through,
+const charging_progress_area_alpha: u8 = 200;
 /// How quickly the critical animation will go.
 /// 8 is pretty quick.
 const critical_animation_speed: u4 = 8;
@@ -211,6 +215,8 @@ pub fn init(args: NewArgs) !Battery {
         .full_color = args.full_color,
 
         .current_state = .discharging,
+        // undefined because it will be set with `setArea()` right after,
+        // or just before it is used in general.
         .fill_color = undefined,
         .battery_font_size = undefined,
         .battery_width = undefined,
@@ -225,6 +231,7 @@ pub fn init(args: NewArgs) !Battery {
         .full_file = full_file,
 
         .padding = Padding.from(args),
+        // if no inner padding was specified, it will be overridden before used.
         .inner_padding = args.inner_padding orelse undefined,
         .inner_padding_was_specified = args.inner_padding != null,
 
@@ -267,11 +274,15 @@ fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
 fn readFileInt(comptime T: type, file: std.fs.File) !T {
     assert(@typeInfo(T) == .Int);
     assert(@typeInfo(T).Int.signedness == .unsigned);
-    const digits = comptime math.log(T, 10, maxInt(T));
 
+    // get total possible number of digits the number could be, plus 1 for overflow saturation
+    const digits = comptime math.log(T, 10, maxInt(T)) + 1;
+
+    // set the files back so we can re-read the changes.
     try file.seekTo(0);
 
     var bytes = try file.reader().readBoundedBytes(digits);
+    // remove any (unlikely) whitespace
     const str = mem.trim(u8, bytes.constSlice(), &ascii.whitespace);
 
     if (str.len == 0) return error.EmptyFile;
@@ -283,11 +294,19 @@ fn readFileInt(comptime T: type, file: std.fs.File) !T {
     };
 }
 
+/// All the charging states the battery can be in.
 pub const BatteryState = enum {
+    /// The battery says it is full, or close enough and
+    /// isn't charging anymore
     full,
+    /// The battery is charging.
     charging,
+    /// most common state. Whenever the computer isn't plugged
+    /// in, and has a significant charge.
     discharging,
+    /// Running on battery power, and the battery is low
     warning,
+    /// Running on battery power, and the battery is really low
     critical,
 };
 
@@ -298,6 +317,7 @@ fn stateToColor(self: *Battery, state: BatteryState) Color {
         .discharging => self.discharging_color,
         .warning => self.warning_color,
         .critical => critical: {
+            // advance the critical animation
             self.critical_animation_percentage +%= critical_animation_speed;
             break :critical self.critical_color.blend(self.warning_color, self.critical_animation_percentage);
         },
@@ -310,18 +330,22 @@ fn stateToColor(self: *Battery, state: BatteryState) Color {
 fn getBatteryState(self: *Battery, fill_ratio: u8) !BatteryState {
     const max_int = maxInt(u8);
 
+    // return the file to the start, to re-read the status.
     try self.status_file.seekTo(0);
 
     const status_bb = try self.status_file.reader().readBoundedBytes(max_status_length);
+    // remove any (unlikely) whitespace
     const status = mem.trim(u8, status_bb.constSlice(), &ascii.whitespace);
 
-    // TODO am I missing any status codes besides for "discharging"?
+    // TODO: am I missing any status codes
     if (ascii.eqlIgnoreCase(status, "charging")) return .charging;
     if (ascii.eqlIgnoreCase(status, "full")) return .full;
 
     // if it is not charging, and it is close to full, assume it is full.
     if (ascii.eqlIgnoreCase(status, "not charging")) {
         if (fill_ratio > max_int * 9 / 10) return .full;
+        // if it isn't charging, but isn't close to full, what do we do?
+        // Maybe add another 'warning' state, but not warning about the battery charge?
         return .discharging;
     }
 
@@ -341,12 +365,14 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     const area_after_padding = self.widget.area.removePadding(self.padding) orelse return;
 
     var battery_capacity = try readFileInt(u31, self.full_file);
+    // if the charge is greater than capacity, saturate it.
     const battery_charge = @min(try readFileInt(u31, self.charge_file), battery_capacity);
 
     // avoid divide by zero.
     // Do it after the battery_charge so if capacity is zero, it will show the battery as empty
     battery_capacity = @max(battery_capacity, 1);
 
+    // a ratio of how full over maxInt(u8)
     const fill_ratio: u8 = @intCast(@as(u64, maxInt(u8)) * battery_charge / battery_capacity);
 
     const state: BatteryState = try self.getBatteryState(fill_ratio);
@@ -356,6 +382,8 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     defer self.fill_color = color;
 
     const color_changed = @as(u32, @bitCast(color)) != @as(u32, @bitCast(self.fill_color));
+
+    // if we go to charging, or come from it, remove the charging glyph (i.e. redraw fully)
     const changed_to_from_charging = (self.current_state == .charging and state != .charging) or (self.current_state != .charging and state == .charging);
 
     // if the widget should to redraw, or if the color changed
@@ -363,6 +391,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
     const inner_padding = Padding.uniform(self.inner_padding);
     const progress_area = self.progress_area.removePadding(inner_padding) orelse {
+        // if the area is too small for a progress bar, don't draw it.
         if (should_redraw) {
             // if there is no area to put the progress, then don't.
             self.widget.area.drawArea(draw_context, self.background_color);
@@ -379,28 +408,40 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     assert(new_fill_pixels <= progress_area.width);
     defer self.fill_pixels = new_fill_pixels;
 
+    // TODO: implement partial glyph drawing so we can just redraw the charging glyph in the area overriden.
     const is_charging_and_decreased = self.current_state == .charging and new_fill_pixels < self.fill_pixels;
 
     if (should_redraw or is_charging_and_decreased) {
         log.debug("fill_ratio: {}/255", .{fill_ratio});
 
+        // fill in the background
         self.widget.area.drawArea(draw_context, self.background_color);
 
+        // Draw the battery outline
         self.drawBattery(draw_context, area_after_padding, color);
 
+        // Draw the padding around the progress bar so it looks nicer
         self.progress_area.drawPadding(draw_context, self.background_color, inner_padding);
 
+        if (options.battery_outlines) {
+            self.progress_area.drawOutline(draw_context, colors.love);
+        }
+
+        // Draw the area of the progress bar that is unfilled
         var unfilled_area = progress_area;
         unfilled_area.width = progress_area.width - new_fill_pixels;
         unfilled_area.x += new_fill_pixels;
         unfilled_area.drawArea(draw_context, self.background_color);
 
+        // Draw the filled area of the progress bar
         var filled_area = progress_area;
 
         filled_area.width = new_fill_pixels;
 
+        // If it is charging, also draw charging glyph.
         if (state == .charging) {
             self.drawCharging(draw_context, area_after_padding, self.full_color);
+            // Put composite so the glyph shows through a little
             filled_area.drawAreaComposite(draw_context, color.withAlpha(charging_progress_area_alpha));
         } else {
             filled_area.drawArea(draw_context, color);
@@ -411,10 +452,12 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
         // add some
         .gt => {
             log.debug("fill_ratio: {}/255", .{fill_ratio});
+            // The area to add
             var to_draw = progress_area;
             to_draw.x += self.fill_pixels;
             to_draw.width = new_fill_pixels - self.fill_pixels;
 
+            // Draw composite if it is charging to show the glyph behind it
             if (state == .charging) {
                 to_draw.drawAreaComposite(draw_context, color.withAlpha(charging_progress_area_alpha));
             } else {
@@ -425,8 +468,12 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
         },
         // remove some
         .lt => {
+            // until we can draw partial glyph, we full redraw if the bar would decrease and it is charging.
             assert(state != .charging);
+
             log.debug("fill_ratio: {}/255", .{fill_ratio});
+
+            // Draw the area to remove
             var to_draw = progress_area;
             to_draw.x += new_fill_pixels;
             to_draw.width = self.fill_pixels - new_fill_pixels;
@@ -449,7 +496,8 @@ fn drawBattery(self: *const Battery, draw_context: *DrawContext, area_after_padd
 
         .font_size = self.battery_font_size,
 
-        .bounding_box = false,
+        // used for debugging
+        .bounding_box = options.battery_outlines,
         .no_alpha = false,
 
         .transform = battery_transform,
@@ -474,7 +522,7 @@ fn drawCharging(self: *const Battery, draw_context: *DrawContext, area_after_pad
 
         .font_size = self.charging_font_size,
 
-        .bounding_box = false,
+        .bounding_box = options.battery_outlines,
         .no_alpha = false,
 
         .transform = charging_transform,
@@ -682,6 +730,8 @@ pub fn getWidth(self: *Battery) u31 {
 test {
     std.testing.refAllDecls(Battery);
 }
+
+const options = @import("options");
 
 const FreeTypeContext = @import("FreeTypeContext.zig");
 const freetype_context = &FreeTypeContext.global;
