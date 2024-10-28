@@ -16,6 +16,13 @@ const workspace_state = &WorkspaceState.global;
 background_color: Color,
 text_color: Color,
 
+/// The ID of the workspace the cursor is over.
+/// Reset this every time the workspaces array is changed.
+hover_workspace_idx: ?WorkspaceIndex = null,
+hover_workspace_drawn: ?WorkspaceIndex = null,
+hover_workspace_background: Color,
+hover_workspace_text: Color,
+
 active_workspace_background: Color,
 active_workspace_text: Color,
 /// tells the widget to fill it's entire background not
@@ -58,7 +65,7 @@ fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
 }
 
 pub inline fn fontScalingFactor(height: u31) u31 {
-    return height * 75 / 100;
+    return height * 3 / 4;
 }
 
 pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
@@ -72,12 +79,26 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
 
     const font_size = fontScalingFactor(self.widget.area.height);
 
-    for (self.workspaces.slice()) |*wksp| {
-        if (full_redraw or wksp.should_redraw) {
-            const background_color = if (wksp.id == self.active_workspace)
+    defer self.hover_workspace_drawn = self.hover_workspace_idx;
+
+    for (self.workspaces.slice(), 0..) |*wksp, idx| {
+        const newly_hovered = self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?;
+        const prev_hovered = self.hover_workspace_drawn != null and idx == self.hover_workspace_drawn.?;
+
+        if (full_redraw or wksp.should_redraw or newly_hovered or prev_hovered) {
+            const background_color = if (self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?)
+                self.hover_workspace_background
+            else if (wksp.id == self.active_workspace)
                 self.active_workspace_background
             else
                 self.background_color;
+
+            const text_color = if (self.hover_workspace_idx != null and idx == self.hover_workspace_idx.?)
+                self.hover_workspace_text
+            else if (wksp.id == self.active_workspace)
+                self.active_workspace_text
+            else
+                self.text_color;
 
             wksp.area.drawArea(draw_context, background_color);
 
@@ -88,7 +109,7 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
 
                 .transform = Transform.identity,
 
-                .text_color = self.text_color,
+                .text_color = text_color,
 
                 .area = wksp.area,
                 .width = .{ .fixed = wksp.area.width },
@@ -143,7 +164,6 @@ fn getWorkspaceSymbol(self: *const Workspaces, idx: WorkspaceID) u21 {
     return '?'; // unknown workspace
 }
 
-/// TODO: Gracefully handle too many workspaces
 fn updateState(self: *Workspaces) !void {
     workspace_state.rwlock.lockShared();
     defer workspace_state.rwlock.unlockShared();
@@ -184,11 +204,10 @@ fn updateState(self: *Workspaces) !void {
         wksp.id = wk_id;
         const wk_symbol = self.getWorkspaceSymbol(wk_id);
 
-        if (wk_id == workspace_state.active_workspace and wk_id != self.active_workspace) {
-            wksp.should_redraw = true;
-        } else if (wk_id == self.active_workspace and wk_id != workspace_state.active_workspace) {
-            wksp.should_redraw = true;
-        }
+        const newly_active = wk_id == workspace_state.active_workspace and wk_id != self.active_workspace;
+        const prev_active = wk_id == self.active_workspace and wk_id != workspace_state.active_workspace;
+
+        wksp.should_redraw = wksp.should_redraw or newly_active or prev_active;
 
         if (wksp.char != wk_symbol) {
             wksp.char = wk_symbol;
@@ -199,9 +218,46 @@ fn updateState(self: *Workspaces) !void {
     self.active_workspace = workspace_state.active_workspace;
 }
 
+fn pointToWorkspaceIndex(self: *Workspaces, point: Point) ?WorkspaceIndex {
+    const x_local = point.x - self.widget.area.x;
+    const y_local = point.y - self.widget.area.y;
+    _ = y_local;
+
+    // TODO: Update when add padding, so only hover when over.
+
+    const workspace_idx = x_local / self.widget.area.height;
+
+    if (workspace_idx >= self.workspaces.len) return null;
+    return @intCast(workspace_idx);
+}
+
+fn motionWidget(widget: *Widget, point: Point) void {
+    const self: *Workspaces = @fieldParentPtr("widget", widget);
+
+    self.motion(point);
+}
+
+pub fn motion(self: *Workspaces, point: Point) void {
+    self.hover_workspace_idx = self.pointToWorkspaceIndex(point);
+}
+
+fn leaveWidget(widget: *Widget) void {
+    const self: *Workspaces = @fieldParentPtr("widget", widget);
+
+    self.leave();
+}
+
+pub fn leave(self: *Workspaces) void {
+    self.hover_workspace_idx = null;
+    // TODO: Implement this.
+}
+
 pub const NewArgs = struct {
     background_color: Color,
     text_color: Color,
+
+    hover_workspace_background: Color,
+    hover_workspace_text: Color,
 
     active_workspace_background: Color,
     active_workspace_text: Color,
@@ -234,10 +290,13 @@ pub fn init(args: NewArgs) !Workspaces {
         .background_color = args.background_color,
         .text_color = args.text_color,
 
+        .hover_workspace_background = args.hover_workspace_background,
+        .hover_workspace_text = args.hover_workspace_text,
+
+        .active_workspace = undefined,
         .active_workspace_background = args.active_workspace_background,
         .active_workspace_text = args.active_workspace_text,
 
-        .active_workspace = undefined,
         .workspaces = .{},
         .workspaces_symbols = args.workspaces_symbols,
 
@@ -248,6 +307,8 @@ pub fn init(args: NewArgs) !Workspaces {
                 .deinit = &Workspaces.deinitWidget,
                 .setArea = &Workspaces.setAreaWidget,
                 .getWidth = &Workspaces.getWidthWidget,
+                .motion = &Workspaces.motionWidget,
+                .leave = &Workspaces.leaveWidget,
             },
         },
     };

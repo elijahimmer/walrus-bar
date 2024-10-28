@@ -112,6 +112,29 @@ fn num2Char(num: u7) [2]u8 {
     };
 }
 
+fn motionWidget(widget: *Widget, point: Point) void {
+    const self: *Clock = @fieldParentPtr("widget", widget);
+
+    self.motion(point);
+}
+
+pub fn motion(self: *Clock, point: Point) void {
+    _ = self;
+    _ = point;
+    // TODO: Implement this.
+}
+
+fn leaveWidget(widget: *Widget) void {
+    const self: *Clock = @fieldParentPtr("widget", widget);
+
+    self.leave();
+}
+
+pub fn leave(self: *Clock) void {
+    _ = self;
+    // TODO: Implement this.
+}
+
 fn getWidthWidget(widget: *Widget) u31 {
     const self: *Clock = @fieldParentPtr("widget", widget);
     return self.getWidth();
@@ -258,6 +281,8 @@ pub fn init(args: NewArgs) Clock {
                 .deinit = &Clock.deinitWidget,
                 .setArea = &Clock.setAreaWidget,
                 .getWidth = &Clock.getWidthWidget,
+                .motion = &Clock.motionWidget,
+                .leave = &Clock.leaveWidget,
             },
 
             .area = args.area,

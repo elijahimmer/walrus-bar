@@ -57,6 +57,21 @@ pub const Rect = struct {
         }
     }
 
+    pub fn contains(self: Rect, inner: Rect) bool {
+        return (self.x <= inner.x) and
+            (self.y <= inner.y) and
+            (self.width >= inner.width) and
+            (self.height >= inner.height) and
+            (self.x + self.width >= inner.x + inner.width) and
+            (self.y + self.height >= inner.y + inner.height);
+    }
+    pub fn containsPoint(self: Rect, point: Point) bool {
+        return (self.x <= point.x) and
+            (self.y <= point.y) and
+            (self.x + self.width >= point.x) and
+            (self.y + self.height >= point.y);
+    }
+
     pub fn assertContains(self: Rect, inner: Rect) void {
         assert(self.x <= inner.x);
         assert(self.y <= inner.y);
@@ -352,10 +367,15 @@ pub const Widget = struct {
         deinit: *const fn (*Widget, Allocator) void,
         setArea: *const fn (*Widget, Rect) void,
         getWidth: *const fn (*Widget) u31,
+
+        motion: *const fn (*Widget, Point) void,
+        leave: *const fn (*Widget) void,
     };
     vtable: *const VTable,
 
     area: Rect,
+
+    last_motion: ?Point = null,
 
     /// This should be true anytime the widget needs to redraw.
     /// So if the area is changed or the glyph needs to for other reasons.
@@ -378,6 +398,18 @@ pub const Widget = struct {
     /// Returns the actual width used, including padding.
     pub inline fn getWidth(self: *Widget) u32 {
         return self.vtable.getWidth(self);
+    }
+
+    /// Tells the widget the mouse has moved in
+    pub inline fn motion(self: *Widget, point: Point) void {
+        self.area.assertContainsPoint(Point);
+        self.vtable.motion(self, point);
+        self.last_motion = point;
+    }
+
+    /// Tells the widget the mouse has moved in
+    pub inline fn leave(self: *Widget) void {
+        self.vtable.motion(self);
     }
 
     pub fn getParent(self: *Widget, T: type) *T {

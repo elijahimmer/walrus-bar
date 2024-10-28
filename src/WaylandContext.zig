@@ -45,6 +45,10 @@ seat_name: u32 = undefined,
 /// TODO: See if we need to store a list here.
 pointer: ?*wl.Pointer = null,
 
+/// The last surface to have a motion on it.
+/// TODO: Remove this and put it pointer local storage when we support multiple.
+last_motion_surface: ?*DrawContext = null,
+
 /// Whether or not the program should still be running.
 running: bool = true,
 

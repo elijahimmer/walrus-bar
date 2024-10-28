@@ -29,27 +29,47 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
         pub fn checker(draw_context: *const DrawContext, target: *wl.Surface) bool {
             return draw_context.surface == target;
         }
-    };
+    }.checker;
 
     switch (event) {
         .enter => |enter| {
+            const surface_x: u31 = @intCast(@max(enter.surface_x.toInt(), 0));
+            const surface_y: u31 = @intCast(@max(enter.surface_y.toInt(), 0));
+
             if (enter.surface) |surface| {
-                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker.checker) orelse @panic("Pointer event on surface that doesn't exist!");
+                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = wayland_context.outputs.items[output_idx];
+                const draw_context = &wayland_context.outputs.items[output_idx];
+                wayland_context.last_motion_surface = draw_context;
 
-                log_local.debug("Cursor entered surface on {s}", .{draw_context.output_context.name});
+                draw_context.motion(.{
+                    .x = surface_x,
+                    .y = surface_y,
+                });
             } else {
                 log_local.warn("Cursor entered but not on a surface?", .{});
             }
         },
+        .motion => |motion| {
+            const surface_x: u31 = @intCast(@max(motion.surface_x.toInt(), 0));
+            const surface_y: u31 = @intCast(@max(motion.surface_y.toInt(), 0));
+
+            if (wayland_context.last_motion_surface) |draw_context| {
+                draw_context.motion(.{
+                    .x = surface_x,
+                    .y = surface_y,
+                });
+            } else {
+                log_local.warn("Cursor motion but not on a surface?", .{});
+            }
+        },
         .leave => |leave| {
             if (leave.surface) |surface| {
-                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker.checker) orelse @panic("Pointer event on surface that doesn't exist!");
+                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = wayland_context.outputs.items[output_idx];
+                const draw_context = &wayland_context.outputs.items[output_idx];
 
-                log_local.debug("Cursor left surface on {s}", .{draw_context.output_context.name});
+                draw_context.leave();
             } else {
                 log_local.warn("Cursor left but not on a surface?", .{});
             }
@@ -71,7 +91,8 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 },
             }
         },
-        .motion, .axis, .frame, .axis_source, .axis_stop, .axis_discrete, .axis_value120, .axis_relative_direction => {},
+        // TODO: Implement input frames.
+        .axis, .frame, .axis_source, .axis_stop, .axis_discrete, .axis_value120, .axis_relative_direction => {},
     }
 }
 

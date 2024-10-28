@@ -233,6 +233,8 @@ pub fn init(args: NewArgs) !Battery {
                 .deinit = &Battery.deinitWidget,
                 .setArea = &Battery.setAreaWidget,
                 .getWidth = &Battery.getWidthWidget,
+                .motion = &Battery.motionWidget,
+                .leave = &Battery.leaveWidget,
             },
 
             // empty area so if the undefined ends being the same as
@@ -250,6 +252,29 @@ pub fn init(args: NewArgs) !Battery {
     self.setArea(args.area);
 
     return self;
+}
+
+fn motionWidget(widget: *Widget, point: Point) void {
+    const self: *Battery = @fieldParentPtr("widget", widget);
+
+    self.motion(point);
+}
+
+pub fn motion(self: *Battery, point: Point) void {
+    _ = self;
+    _ = point;
+    // TODO: Implement this.
+}
+
+fn leaveWidget(widget: *Widget) void {
+    const self: *Battery = @fieldParentPtr("widget", widget);
+
+    self.leave();
+}
+
+pub fn leave(self: *Battery) void {
+    _ = self;
+    // TODO: Implement this.
 }
 
 /// draw translation layer for widget calls.
@@ -683,6 +708,7 @@ const drawing = @import("drawing.zig");
 const Transform = drawing.Transform;
 const Padding = drawing.Padding;
 const Widget = drawing.Widget;
+const Point = drawing.Point;
 const Rect = drawing.Rect;
 
 const colors = @import("colors.zig");

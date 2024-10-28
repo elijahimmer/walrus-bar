@@ -27,6 +27,9 @@ damage_prev: DamageList = damage_list_init,
 has_started: bool = false,
 full_redraw: bool = true,
 
+last_motion: ?Point = null,
+
+// TODO: Remove these widgets and make a separate container struct for them.
 widget_left: ?if (options.workspaces_enable) Workspaces else void = null,
 widget_center: ?if (options.clock_enable) Clock else void = null,
 widget_right: ?if (options.battery_enable) Battery else void = null,
@@ -222,6 +225,9 @@ fn initWidgets(draw_context: *DrawContext) void {
         var workspaces = Workspaces.init(.{
             .background_color = colors.surface,
             .text_color = colors.rose,
+
+            .hover_workspace_background = colors.hl_med,
+            .hover_workspace_text = colors.gold,
 
             .active_workspace_background = colors.pine,
             .active_workspace_text = colors.gold,
@@ -626,6 +632,46 @@ test drawBitmap {
     for (draw_context.screen) |pixel| {
         try std.testing.expectEqual(@as(u32, @bitCast(pixel)), @as(u32, @bitCast(result)));
     }
+}
+
+pub fn motion(draw_context: *DrawContext, point: Point) void {
+    const last_motion = draw_context.last_motion;
+    defer draw_context.last_motion = point;
+
+    inline for (.{
+        "widget_left",
+        "widget_center",
+        "widget_right",
+    }) |widget_name| {
+        if (@field(draw_context, widget_name)) |*widget| {
+            const area = widget.widget.area;
+            if (last_motion) |lm| {
+                if (area.containsPoint(lm) and !area.containsPoint(point)) widget.leave();
+                if (!area.containsPoint(lm) and area.containsPoint(point)) widget.motion(point);
+            }
+            if (area.containsPoint(point)) widget.motion(point);
+        }
+    }
+}
+
+pub fn leave(draw_context: *DrawContext) void {
+    var left = false;
+    inline for (.{
+        "widget_left",
+        "widget_center",
+        "widget_right",
+    }) |widget_name| {
+        if (draw_context.last_motion) |last_motion| {
+            if (@field(draw_context, widget_name)) |*widget| {
+                if (widget.widget.area.containsPoint(last_motion)) {
+                    assert(!left);
+                    widget.leave();
+                    left = true;
+                }
+            }
+        }
+    }
+    draw_context.last_motion = null;
 }
 
 test {
