@@ -58,7 +58,7 @@ pub fn damage(draw_context: *DrawContext, area: Rect) void {
     if (options.track_damage) {
         draw_context.damage_list.append(area) catch @panic("the Damage list is full, increase list size.");
     } else {
-        area.damageArea(draw_context);
+        draw_context.surface.?.damageBuffer(area.x, area.y, area.width, area.height);
     }
 }
 

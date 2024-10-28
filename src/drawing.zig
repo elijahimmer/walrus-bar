@@ -269,11 +269,6 @@ pub const Rect = struct {
         }
     }
 
-    pub fn damageArea(self: Rect, draw_context: *const DrawContext) void {
-        draw_context.current_area.assertContains(self);
-        draw_context.surface.?.damageBuffer(self.x, self.y, self.width, self.height);
-    }
-
     pub fn drawOutline(self: Rect, draw_context: *const DrawContext, color: Color) void {
         const x_min = self.x;
         const y_min = self.y;

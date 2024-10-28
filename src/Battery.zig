@@ -9,6 +9,7 @@ const battery_transform = Transform.identity;
 /// options: 󱐋 need to test both.
 const charging_symbol: u21 = unicode.utf8Decode("") catch unreachable;
 const charging_transform = Transform.right;
+const charging_progress_area_alpha: u8 = 240;
 /// How quickly the critical animation will go.
 /// 8 is pretty quick.
 const critical_animation_speed: u4 = 8;
@@ -400,10 +401,12 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
         if (state == .charging) {
             self.drawCharging(draw_context, area_after_padding, self.full_color);
-            filled_area.drawAreaComposite(draw_context, color.withAlpha(240));
+            filled_area.drawAreaComposite(draw_context, color.withAlpha(charging_progress_area_alpha));
         } else {
             filled_area.drawArea(draw_context, color);
         }
+
+        draw_context.damage(self.widget.area);
     } else switch (math.order(new_fill_pixels, self.fill_pixels)) {
         // add some
         .gt => {
@@ -413,10 +416,12 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             to_draw.width = new_fill_pixels - self.fill_pixels;
 
             if (state == .charging) {
-                to_draw.drawAreaComposite(draw_context, color.withAlpha(240));
+                to_draw.drawAreaComposite(draw_context, color.withAlpha(charging_progress_area_alpha));
             } else {
                 to_draw.drawArea(draw_context, color);
             }
+
+            draw_context.damage(to_draw);
         },
         // remove some
         .lt => {
@@ -427,6 +432,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             to_draw.width = self.fill_pixels - new_fill_pixels;
 
             to_draw.drawArea(draw_context, self.background_color);
+            draw_context.damage(to_draw);
         },
         // do nothing
         .eq => {},
