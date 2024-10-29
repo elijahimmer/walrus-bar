@@ -36,18 +36,8 @@ active_workspace: WorkspaceID,
 workspaces: WorkspacesArray,
 workspaces_symbols: []const u8,
 
-fn getWidthWidget(widget: *Widget) u31 {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-    return self.getWidth();
-}
-
 pub fn getWidth(self: *Workspaces) u31 {
     return self.widget.area.height * max_workspace_count;
-}
-
-fn setAreaWidget(widget: *Widget, area: Rect) void {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-    self.setArea(area);
 }
 
 pub fn setArea(self: *Workspaces, area: Rect) void {
@@ -62,7 +52,7 @@ pub inline fn fontScalingFactor(height: u31) u31 {
     return height * 3 / 4;
 }
 
-fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
+pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
     const self: *Workspaces = @fieldParentPtr("widget", widget);
 
     try self.updateState();
@@ -227,7 +217,7 @@ fn pointToWorkspaceIndex(self: *Workspaces, point: Point) ?WorkspaceIndex {
     return @intCast(workspace_idx);
 }
 
-fn clickWidget(widget: *Widget, point: Point, button: MouseButton) void {
+pub fn clickWidget(widget: *Widget, point: Point, button: MouseButton) void {
     const self: *Workspaces = @fieldParentPtr("widget", widget);
 
     if (button != .left_click) return;
@@ -290,16 +280,7 @@ pub fn init(args: NewArgs) !Workspaces {
 
         .widget = .{
             .area = args.area,
-            .vtable = &.{
-                .draw = &Workspaces.drawWidget,
-                .deinit = &Workspaces.deinitWidget,
-                .setArea = &Workspaces.setAreaWidget,
-                .getWidth = &Workspaces.getWidthWidget,
-                // no motion or leave, all we need is last_motion.
-                .motion = null,
-                .leave = null,
-                .click = &Workspaces.clickWidget,
-            },
+            .vtable = &Widget.generateVTable(Workspaces),
         },
     };
 }

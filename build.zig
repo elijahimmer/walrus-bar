@@ -16,11 +16,6 @@ pub fn build(b: *std.Build) void {
     const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file (maybe larger than 5Mbs)?");
     font.addOption([]const u8, "font_data", font_data);
 
-    //
-    // TODO: Change all these logging to be log levels...
-    //       so don't be stupid...
-    //
-
     const options = b.addOptions();
     const logging_options = b.addOptions();
     { // freetype

@@ -5,6 +5,7 @@ pub const Color = packed struct(u32) {
     r: u8,
     a: u8,
 
+    // TODO: Support multiple color formats. (we won't need to for a long time though)
     pub const FORMAT: wl.Shm.Format = .argb8888;
 
     pub fn withAlpha(self: Color, alpha: u8) Color {

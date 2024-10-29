@@ -7,23 +7,90 @@ inner_widgets: ArrayListUnmanaged(Widget),
 
 widget: Widget,
 
-pub fn newWidget(allocator: Allocator) Allocator.Error!*Widget {
-    const new = allocator.create(Container);
+fn deinitWidget(widget: *Widget, allocator: Allocator) void {
+    const self: *Container = @fieldParentPtr("widget", widget);
 
-    new.* = try Container.init();
+    self.deinit(allocator);
 
-    return new;
+    allocator.destroy(self);
+    self.* = undefined;
 }
 
-pub fn init() !Container {
+pub fn deinit(self: *Container, allocator: Allocator) void {
+    self.inner_widgets.deinit(allocator);
+}
+
+fn setAreaWidget(widget: *Widget, area: Rect) void {
+    const self: *Container = @fieldParentPtr("widget", widget);
+
+    self.setArea(area);
+}
+
+pub fn setArea(self: Container, area: Rect) void {
+    _ = self;
+    _ = area;
+    @panic("Unimplemented");
+}
+
+fn getWidthWidget(widget: *Widget) u31 {
+    const self: *Container = @fieldParentPtr("widget", widget);
+
+    return self.getWidth();
+}
+
+pub fn getWidth(self: Container) u31 {
+    _ = self;
+    @panic("Unimplemented");
+}
+
+fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
+    const self: *Container = @fieldParentPtr("widget", widget);
+
+    try self.draw(draw_context);
+}
+
+pub fn draw(self: *Container, draw_context: *DrawContext) !void {
+    _ = self;
+    _ = draw_context;
+}
+
+pub const NewWidgetArgs = struct {
+    area: Rect,
+};
+
+pub fn newWidget(allocator: Allocator, args: NewWidgetArgs) Allocator.Error!*Widget {
+    const new = try allocator.create(Container);
+
+    new.* = Container.init(args);
+
+    return &new.widget;
+}
+
+pub fn init(args: NewWidgetArgs) Container {
     return .{
         .inner_widgets = .{},
-        .widget = .{ .vtable = .{} },
+        .widget = .{
+            .vtable = &.{
+                .draw = &Container.drawWidget,
+                .deinit = &Container.deinitWidget,
+                .setArea = &Container.setAreaWidget,
+                .getWidth = &Container.getWidthWidget,
+                // TODO: Implement mouse interface.
+                .motion = null,
+                .leave = null,
+                .click = null,
+            },
+
+            .area = args.area,
+        },
     };
 }
 
+const DrawContext = @import("DrawContext.zig");
+
 const drawing = @import("drawing.zig");
 const Widget = drawing.Widget;
+const Rect = drawing.Rect;
 
 const std = @import("std");
 

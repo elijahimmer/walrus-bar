@@ -60,6 +60,7 @@ test {
     std.testing.refAllDecls(@import("Workspaces/hyprland.zig"));
     std.testing.refAllDecls(@import("Workspaces/testing.zig"));
     std.testing.refAllDecls(@import("Workspaces/none.zig"));
+    std.testing.refAllDecls(@import("Container.zig"));
     std.testing.refAllDecls(@import("TextBox.zig"));
     std.testing.refAllDecls(@import("Battery.zig"));
     std.testing.refAllDecls(@import("Clock.zig"));

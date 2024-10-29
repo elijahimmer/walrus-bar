@@ -32,7 +32,7 @@ inline fn spacerFontSize(self: *const Clock) u31 {
 }
 
 /// conversion to draw from the widget vtable
-fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
+pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     const self: *Clock = @fieldParentPtr("widget", widget);
 
     const tod = ctime.time(null);
@@ -109,11 +109,6 @@ fn num2Char(num: u7) [2]u8 {
     };
 }
 
-fn getWidthWidget(widget: *Widget) u31 {
-    const self: *Clock = @fieldParentPtr("widget", widget);
-    return self.getWidth();
-}
-
 /// returns the used width in pixels
 pub fn getWidth(self: *Clock) u31 {
     const hours_width = self.hours_box.getWidth();
@@ -139,11 +134,6 @@ fn getSpacerWidth(self: *Clock) u31 {
 pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
     const self: *Clock = @fieldParentPtr("widget", widget);
     allocator.destroy(self);
-}
-
-pub fn setAreaWidget(widget: *Widget, area: Rect) void {
-    const self: *Clock = @fieldParentPtr("widget", widget);
-    self.setArea(area);
 }
 
 pub fn setArea(self: *Clock, area: Rect) void {
@@ -250,15 +240,7 @@ pub fn init(args: NewArgs) Clock {
         .padding = Padding.from(args),
 
         .widget = .{
-            .vtable = &.{
-                .draw = &Clock.drawWidget,
-                .deinit = &Clock.deinitWidget,
-                .setArea = &Clock.setAreaWidget,
-                .getWidth = &Clock.getWidthWidget,
-                .motion = null,
-                .leave = null,
-                .click = null,
-            },
+            .vtable = &Widget.generateVTable(Clock),
 
             .area = args.area,
         },

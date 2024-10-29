@@ -419,6 +419,75 @@ pub const Widget = struct {
     pub fn getParent(self: *Widget, T: type) *T {
         return @fieldParentPtr("widget", self);
     }
+
+    pub fn generateVTable(Outer: type) VTable {
+        const S = struct {
+            pub fn draw(widget: *Widget, draw_context: *DrawContext) anyerror!void {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                try self.draw(draw_context);
+            }
+
+            pub fn deinit(widget: *Widget, allocator: Allocator) void {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                if (!meta.hasFn(Outer, "deinit")) {
+                    if (@typeInfo(self.deinit).Fn.Params.len > 0) {
+                        assert(@typeInfo(self.deinit).Fn.Params.len > 0);
+                        assert(@typeInfo(self.deinit).Fn.Params[0].type == Allocator);
+
+                        self.deinit(allocator);
+                    } else {
+                        self.deinit(allocator);
+                    }
+                }
+
+                allocator.destroy(self);
+                self.* = undefined;
+            }
+
+            pub fn setArea(widget: *Widget, area: Rect) void {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                self.setArea(area);
+            }
+
+            pub fn getWidth(widget: *Widget) u31 {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                return self.getWidth();
+            }
+
+            pub fn motion(widget: *Widget, point: Point) void {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                self.motion(point);
+            }
+
+            pub fn click(widget: *Widget, point: Point, button: MouseButton) void {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                self.click(point, button);
+            }
+
+            pub fn leave(widget: *Widget) void {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                self.leave();
+            }
+        };
+
+        return .{
+            .draw = if (std.meta.hasFn(Outer, "drawWidget")) Outer.drawWidget else S.draw,
+            .deinit = if (std.meta.hasFn(Outer, "deinitWidget")) Outer.deinitWidget else S.deinit,
+            .setArea = if (std.meta.hasFn(Outer, "setAreaWidget")) Outer.setAreaWidget else S.setArea,
+            .getWidth = if (std.meta.hasFn(Outer, "getWidthWidget")) Outer.getWidthWidget else S.getWidth,
+
+            .motion = if (@hasDecl(Outer, "motion")) S.motion else null,
+            .leave = if (@hasDecl(Outer, "leave")) S.motion else null,
+            .click = if (@hasDecl(Outer, "click")) S.motion else null,
+        };
+    }
 };
 
 pub const Align = enum { start, center, end };
@@ -434,6 +503,7 @@ const Color = colors.Color;
 
 const std = @import("std");
 const math = std.math;
+const meta = std.meta;
 
 const Allocator = std.mem.Allocator;
 

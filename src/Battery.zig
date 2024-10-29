@@ -237,18 +237,10 @@ pub fn init(args: NewArgs) !Battery {
         .inner_padding_was_specified = args.inner_padding != null,
 
         .widget = .{
-            .vtable = &.{
-                .draw = &Battery.drawWidget,
-                .deinit = &Battery.deinitWidget,
-                .setArea = &Battery.setAreaWidget,
-                .getWidth = &Battery.getWidthWidget,
-                .motion = null,
-                .leave = null,
-                .click = null,
-            },
+            .vtable = &Widget.generateVTable(Battery),
 
-            // empty area so if the undefined ends being the same as
-            // the args.area setArea will still work.
+            // set to an empty area because if undefined it could do
+            // something weird in setArea
             .area = .{
                 .x = 0,
                 .y = 0,
@@ -264,12 +256,12 @@ pub fn init(args: NewArgs) !Battery {
     return self;
 }
 
-/// draw translation layer for widget calls.
-fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
-    const self: *Battery = @fieldParentPtr("widget", widget);
-
-    try self.draw(draw_context);
-}
+///// draw translation layer for widget calls.
+//fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
+//    const self: *Battery = @fieldParentPtr("widget", widget);
+//
+//    try self.draw(draw_context);
+//}
 
 /// Reads a file that only contains an int.
 fn readFileInt(comptime T: type, file: std.fs.File) !T {
@@ -537,15 +529,15 @@ fn drawCharging(self: *const Battery, draw_context: *DrawContext, area_after_pad
     });
 }
 
-/// Deallocates and deinitializes the battery that was made with newWidget
-fn deinitWidget(widget: *Widget, allocator: Allocator) void {
-    const self: *Battery = @fieldParentPtr("widget", widget);
-
-    self.deinit();
-
-    allocator.destroy(self);
-    self.* = undefined;
-}
+///// Deallocates and deinitializes the battery that was made with newWidget
+//fn deinitWidget(widget: *Widget, allocator: Allocator) void {
+//    const self: *Battery = @fieldParentPtr("widget", widget);
+//
+//    self.deinit();
+//
+//    allocator.destroy(self);
+//    self.* = undefined;
+//}
 
 /// Deinitializes the battery widget.
 pub fn deinit(self: *Battery) void {
@@ -555,23 +547,25 @@ pub fn deinit(self: *Battery) void {
     self.* = undefined;
 }
 
-/// Widget translation function to set area.
-fn setAreaWidget(widget: *Widget, area: Rect) void {
-    const self: *Battery = @fieldParentPtr("widget", widget);
-
-    self.setArea(area);
-}
+///// Widget translation function to set area.
+//fn setAreaWidget(widget: *Widget, area: Rect) void {
+//    const self: *Battery = @fieldParentPtr("widget", widget);
+//
+//    self.setArea(area);
+//}
 
 /// Sets the area of the battery, and tells it to redraw.
 /// This also re-calculates the battery and charging, font_size and width
 ///     if the area changed (and there is some area after padding)
 pub fn setArea(self: *Battery, area: Rect) void {
     if (meta.eql(area, self.widget.area)) return;
-    self.widget.area = area;
-    self.widget.full_redraw = true;
+    defer self.widget.area = area;
+    defer self.widget.full_redraw = true;
+
+    // if the size hasn't changed, then don't recalculate.
+    if (meta.eql(area.dims(), self.widget.area.dims())) return;
 
     if (area.removePadding(self.padding)) |area_after_padding| {
-        // TODO: don't recalculate if you won't be able to make the size different.
         {
             const max = freetype_context.maximumFontSize(.{
                 .transform = battery_transform,
@@ -716,12 +710,12 @@ pub fn calculateProgressArea(self: *Battery) void {
     }
 }
 
-/// Widget translation function to get the battery's width
-fn getWidthWidget(widget: *Widget) u31 {
-    const self: *Battery = @fieldParentPtr("widget", widget);
-
-    return self.getWidth();
-}
+///// Widget translation function to get the battery's width
+//fn getWidthWidget(widget: *Widget) u31 {
+//    const self: *Battery = @fieldParentPtr("widget", widget);
+//
+//    return self.getWidth();
+//}
 
 /// returns the width the battery will take up.
 pub fn getWidth(self: *Battery) u31 {

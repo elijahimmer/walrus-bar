@@ -55,7 +55,7 @@ scaling: ScalingTypeInfo,
 
 widget: Widget,
 
-fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
+pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     const self: *TextBox = @fieldParentPtr("widget", widget);
 
     defer self.text_first_diff = null;
@@ -134,11 +134,6 @@ fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
             area.drawOutline(draw_context, colors.gold);
         }
     }
-}
-
-fn getWidthWidget(widget: *Widget) u31 {
-    const self: *TextBox = @fieldParentPtr("widget", widget);
-    return self.getWidth();
 }
 
 /// Gets the total width of the textbox.
@@ -227,11 +222,6 @@ fn getFontSize(self: *TextBox) u32 {
 pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
     const self: *TextBox = @fieldParentPtr("widget", widget);
     allocator.destroy(self);
-}
-
-pub fn setAreaWidget(widget: *Widget, area: Rect) void {
-    const self: *TextBox = @fieldParentPtr("widget", widget);
-    self.setArea(area);
 }
 
 pub fn setArea(self: *TextBox, area: Rect) void {
@@ -342,15 +332,7 @@ pub fn init(args: NewArgs) TextBox {
         .padding_west = args.padding_west orelse args.padding,
 
         .widget = .{
-            .vtable = &.{
-                .draw = &TextBox.drawWidget,
-                .deinit = &TextBox.deinitWidget,
-                .setArea = &TextBox.setAreaWidget,
-                .getWidth = &TextBox.getWidthWidget,
-                .motion = null,
-                .leave = null,
-                .click = null,
-            },
+            .vtable = &Widget.generateVTable(TextBox),
             .area = args.area,
         },
     };
