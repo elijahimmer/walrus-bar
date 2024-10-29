@@ -77,12 +77,7 @@ pub fn build(b: *std.Build) void {
             logging_options.addOption(LogLevel, "WorkspacesWorker", verbose_logging orelse if (debug_widget) .debug else .warn);
         }
 
-        // TODO: Find a nicer way to do this
-        var logging_name: [widget.len]u8 = undefined;
-        @memcpy(&logging_name, widget);
-        logging_name[0] = std.ascii.toUpper(logging_name[0]);
-
-        logging_options.addOption(LogLevel, &logging_name, verbose_logging orelse if (debug_widget) .debug else .warn);
+        logging_options.addOption(LogLevel, widget, verbose_logging orelse if (debug_widget) .debug else .warn);
     }
 
     const exe_unit_tests = b.addTest(.{
@@ -150,9 +145,9 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_unit_tests.step);
 }
 
-const LogLevel = enum { debug, info, warn, err };
-
 const std = @import("std");
 const mem = std.mem;
+
+const LogLevel = std.log.Level;
 
 const Scanner = @import("zig-wayland").Scanner;

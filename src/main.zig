@@ -81,7 +81,8 @@ fn translateLogLevel(level: bo.@"build.LogLevel") std.log.Level {
 }
 
 pub const std_options = .{
-    .logFn = logFn,
+    .logFn = logging.logFn,
+    .log_scope_levels = &logging.logging_scope_levels,
 };
 
 const WaylandContext = @import("WaylandContext.zig");
@@ -96,7 +97,6 @@ const Config = @import("Config.zig");
 const FreeTypeContext = @import("FreeTypeContext.zig");
 
 const logging = @import("logging.zig");
-const logFn = logging.logFn;
 
 const std = @import("std");
 

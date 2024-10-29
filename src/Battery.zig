@@ -166,6 +166,7 @@ pub fn init(args: NewArgs) !Battery {
 
     if (path_length > std.fs.max_path_bytes) {
         log.err("provided battery directory makes path too long to be a valid path.", .{});
+        // crash or not to crash, that is the question...
         return error.PathTooLong;
     }
 
@@ -179,7 +180,7 @@ pub fn init(args: NewArgs) !Battery {
     battery_path.appendSliceAssumeCapacity(full_file_name);
 
     const full_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
-        log.err("Failed to open Battery Full File with: {s}", .{@errorName(err)});
+        log.warn("Failed to open Battery Full File with: {s}", .{@errorName(err)});
         return error.FullFileError;
     };
     errdefer full_file.close();
@@ -189,7 +190,7 @@ pub fn init(args: NewArgs) !Battery {
     battery_path.appendSliceAssumeCapacity(charge_file_name);
 
     const charge_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
-        log.err("Failed to open Battery Charge File with: {s}", .{@errorName(err)});
+        log.warn("Failed to open Battery Charge File with: {s}", .{@errorName(err)});
         return error.ChargeFileError;
     };
     errdefer full_file.close();
@@ -199,7 +200,7 @@ pub fn init(args: NewArgs) !Battery {
     battery_path.appendSliceAssumeCapacity(status_file_name);
 
     const status_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
-        log.err("Failed to open Battery Status File with: {s}", .{@errorName(err)});
+        log.warn("Failed to open Battery Status File with: {s}", .{@errorName(err)});
         return error.StatusFileError;
     };
     errdefer full_file.close();
