@@ -576,6 +576,7 @@ test drawBitmap {
         .metrics = undefined,
         .advance_x = undefined,
         .time = undefined,
+        .transformed = false,
         .load_mode = .render,
         .bitmap_top = 0,
         .bitmap_left = 0,
@@ -588,6 +589,9 @@ test drawBitmap {
         .glyph = &glyph,
         .text_color = colors.main,
         .max_area = window_area,
+
+        .no_alpha = false,
+
         .origin = .{
             .x = 0,
             .y = 0,
@@ -604,6 +608,9 @@ test drawBitmap {
         .glyph = &glyph,
         .text_color = colors.main,
         .max_area = window_area,
+
+        .no_alpha = false,
+
         .origin = .{
             .x = 0,
             .y = 0,
@@ -622,6 +629,9 @@ test drawBitmap {
         .glyph = &glyph,
         .text_color = colors.rose,
         .max_area = window_area,
+
+        .no_alpha = false,
+
         .origin = .{
             .x = 0,
             .y = 0,

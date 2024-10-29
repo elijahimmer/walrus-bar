@@ -13,7 +13,7 @@ pub const Color = packed struct(u32) {
         return new;
     }
 
-    //pub fn composite_fp(bg: Color, fg: Color) Color {
+    //pub fn composite(bg: Color, fg: Color) Color {
     //    const ratio = @as(f32, @floatFromInt(fg.a)) / 255.0;
     //    const ratio_old = @max(1.0 - ratio, 0.0);
 
@@ -35,9 +35,9 @@ pub const Color = packed struct(u32) {
 
         return .{
             .a = fg.a +| bg.a,
-            .r = @intCast((fg.r * ratio >> 8) + (bg.r * ratio_old >> 8)),
-            .g = @intCast((fg.g * ratio >> 8) + (bg.g * ratio_old >> 8)),
-            .b = @intCast((fg.b * ratio >> 8) + (bg.b * ratio_old >> 8)),
+            .r = @intCast((fg.r * ratio >> 8) + (bg.r * ratio_old >> 8) + @intFromBool(fg.r * ratio % (1 << 8) >= (1 << 7))),
+            .g = @intCast((fg.g * ratio >> 8) + (bg.g * ratio_old >> 8) + @intFromBool(fg.g * ratio % (1 << 8) >= (1 << 7))),
+            .b = @intCast((fg.b * ratio >> 8) + (bg.b * ratio_old >> 8) + @intFromBool(fg.b * ratio % (1 << 8) >= (1 << 7))),
         };
     }
 
