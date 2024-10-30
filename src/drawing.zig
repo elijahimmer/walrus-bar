@@ -420,7 +420,7 @@ pub const Widget = struct {
         return @fieldParentPtr("widget", self);
     }
 
-    pub fn generateVTable(Outer: type) VTable {
+    pub fn generateVTable(Outer: type) type {
         const S = struct {
             pub fn draw(widget: *Widget, draw_context: *DrawContext) anyerror!void {
                 const self: *Outer = @fieldParentPtr("widget", widget);
@@ -475,18 +475,20 @@ pub const Widget = struct {
 
                 self.leave();
             }
+
+            pub const vtable = VTable{
+                .draw = if (std.meta.hasFn(Outer, "drawWidget")) &Outer.drawWidget else &@This().draw,
+                .deinit = if (std.meta.hasFn(Outer, "deinitWidget")) &Outer.deinitWidget else &@This().deinit,
+                .setArea = if (std.meta.hasFn(Outer, "setAreaWidget")) &Outer.setAreaWidget else &@This().setArea,
+                .getWidth = if (std.meta.hasFn(Outer, "getWidthWidget")) &Outer.getWidthWidget else &@This().getWidth,
+
+                .motion = if (@hasDecl(Outer, "motion")) @This().motion else null,
+                .leave = if (@hasDecl(Outer, "leave")) @This().leave else null,
+                .click = if (@hasDecl(Outer, "click")) @This().click else null,
+            };
         };
 
-        return .{
-            .draw = if (std.meta.hasFn(Outer, "drawWidget")) Outer.drawWidget else S.draw,
-            .deinit = if (std.meta.hasFn(Outer, "deinitWidget")) Outer.deinitWidget else S.deinit,
-            .setArea = if (std.meta.hasFn(Outer, "setAreaWidget")) Outer.setAreaWidget else S.setArea,
-            .getWidth = if (std.meta.hasFn(Outer, "getWidthWidget")) Outer.getWidthWidget else S.getWidth,
-
-            .motion = if (@hasDecl(Outer, "motion")) S.motion else null,
-            .leave = if (@hasDecl(Outer, "leave")) S.motion else null,
-            .click = if (@hasDecl(Outer, "click")) S.motion else null,
-        };
+        return S;
     }
 };
 

@@ -280,7 +280,10 @@ fn initWidgets(draw_context: *DrawContext) void {
         right_area.width = battery.getWidth();
         right_area.x = draw_context.window_area.width - right_area.width;
 
-        battery.setArea(right_area);
+        battery.widget.setArea(right_area);
+        log.debug("battery: area: {}, {}", .{ battery.widget.area, battery.progress_area });
+
+        battery.widget.area.assertContains(battery.progress_area);
 
         draw_context.widget_right = battery;
     }

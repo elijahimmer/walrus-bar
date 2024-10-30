@@ -5,6 +5,7 @@ pub const Battery = @This();
 
 /// The battery symbol to draw.
 const battery_symbol: u21 = unicode.utf8Decode("") catch unreachable;
+/// Don't transform
 const battery_transform = Transform.identity;
 
 /// options: 󱐋 need to test both.
@@ -237,7 +238,7 @@ pub fn init(args: NewArgs) !Battery {
         .inner_padding_was_specified = args.inner_padding != null,
 
         .widget = .{
-            .vtable = &Widget.generateVTable(Battery),
+            .vtable = &Widget.generateVTable(Battery).vtable,
 
             // set to an empty area because if undefined it could do
             // something weird in setArea
@@ -397,6 +398,8 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
         return;
     };
 
+    self.widget.area.assertContains(progress_area);
+
     const new_fill_pixels: u31 = @intCast(@as(u64, battery_charge) * progress_area.width / battery_capacity);
     assert(new_fill_pixels <= progress_area.width);
     defer self.fill_pixels = new_fill_pixels;
@@ -418,6 +421,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
         if (options.battery_outlines) {
             self.progress_area.drawOutline(draw_context, colors.love);
+            self.widget.area.drawOutline(draw_context, colors.pine);
         }
 
         // Draw the area of the progress bar that is unfilled
@@ -588,7 +592,8 @@ pub fn setArea(self: *Battery, area: Rect) void {
 
             self.charging_font_size = max.font_size;
         }
-        self.calculateProgressArea();
+        self.calculateProgressArea(area);
+        area.assertContains(self.progress_area);
     }
 }
 
@@ -602,7 +607,7 @@ fn chargingScaling(scale: u31) u31 {
 /// Update or at least test if the glyph isn't ' '
 ///
 /// TODO: try to make this function simpler... or atleast shorter...
-pub fn calculateProgressArea(self: *Battery) void {
+pub fn calculateProgressArea(self: *Battery, area: Rect) void {
     const glyph = freetype_context.loadChar(battery_symbol, .{
         .load_mode = .render,
         .font_size = self.battery_font_size,
@@ -688,7 +693,7 @@ pub fn calculateProgressArea(self: *Battery) void {
         unreachable;
     };
 
-    const widget_area = self.widget.area.removePadding(self.padding) orelse return;
+    const widget_area = area.removePadding(self.padding) orelse return;
 
     const glyph_area = widget_area.center(.{ .x = bitmap_width, .y = bitmap_height });
 
@@ -700,9 +705,7 @@ pub fn calculateProgressArea(self: *Battery) void {
     };
     self.progress_area = progress_area;
 
-    self.widget.area.assertContains(progress_area);
-
-    log.debug("progress_area: {}, widget area: {}", .{ progress_area, self.widget.area });
+    area.assertContains(progress_area);
 
     if (!self.inner_padding_was_specified) {
         // this padding looks pretty nice.

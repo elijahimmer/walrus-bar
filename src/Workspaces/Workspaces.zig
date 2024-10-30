@@ -280,7 +280,7 @@ pub fn init(args: NewArgs) !Workspaces {
 
         .widget = .{
             .area = args.area,
-            .vtable = &Widget.generateVTable(Workspaces),
+            .vtable = &Widget.generateVTable(Workspaces).vtable,
         },
     };
 }
