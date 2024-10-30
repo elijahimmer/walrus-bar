@@ -30,9 +30,9 @@ full_redraw: bool = true,
 last_motion: ?Point = null,
 
 // TODO: Remove these widgets and make a separate container struct for them.
-widget_left: ?if (!options.workspaces_disable) Workspaces else void = null,
-widget_center: ?if (!options.clock_disable) Clock else void = null,
-widget_right: ?if (!options.battery_disable) Battery else void = null,
+widget_left: if (!options.workspaces_disable) ?Workspaces else void = if (!options.workspaces_disable) null else {},
+widget_center: if (!options.clock_disable) ?Clock else void = if (!options.clock_disable) null else {},
+widget_right: if (!options.battery_disable) ?Battery else void = if (!options.battery_disable) null else {},
 
 pub const OutputContext = struct {
     output: *wl.Output,
@@ -449,6 +449,8 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
     }
 
     inline for (.{ "widget_left", "widget_center", "widget_right" }) |name| {
+        if (@TypeOf(@field(draw_context, name)) == void) continue;
+
         if (@field(draw_context, name)) |*w| {
             if (@TypeOf(w) != *void) {
                 draw_context.current_area = w.widget.area;
@@ -655,6 +657,7 @@ pub fn motion(draw_context: *DrawContext, point: Point) void {
         "widget_center",
         "widget_right",
     }) |widget_name| {
+        if (@TypeOf(@field(draw_context, widget_name)) == void) continue;
         if (@field(draw_context, widget_name)) |*widget| {
             const area = widget.widget.area;
             if (last_motion) |lm| {
@@ -673,6 +676,7 @@ pub fn leave(draw_context: *DrawContext) void {
         "widget_center",
         "widget_right",
     }) |widget_name| {
+        if (@TypeOf(@field(draw_context, widget_name)) == void) continue;
         if (draw_context.last_motion) |last_motion| {
             if (@field(draw_context, widget_name)) |*widget| {
                 if (widget.widget.area.containsPoint(last_motion)) {
@@ -694,6 +698,7 @@ pub fn click(draw_context: *DrawContext, button: MouseButton) void {
         "widget_center",
         "widget_right",
     }) |widget_name| {
+        if (@TypeOf(@field(draw_context, widget_name)) == void) continue;
         if (draw_context.last_motion) |last_motion| {
             if (@field(draw_context, widget_name)) |*widget| {
                 if (widget.widget.area.containsPoint(last_motion)) {

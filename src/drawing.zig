@@ -377,6 +377,7 @@ pub const Widget = struct {
     /// So if the area is changed or the glyph needs to for other reasons.
     full_redraw: bool = true,
 
+    // Draws the widget.
     pub inline fn draw(self: *Widget, draw_context: *DrawContext) anyerror!void {
         defer self.full_redraw = false;
         try self.vtable.draw(self, draw_context);
@@ -420,7 +421,7 @@ pub const Widget = struct {
         return @fieldParentPtr("widget", self);
     }
 
-    pub fn generateVTable(Outer: type) type {
+    pub fn generateVTable(Outer: type) *const VTable {
         const S = struct {
             pub fn draw(widget: *Widget, draw_context: *DrawContext) anyerror!void {
                 const self: *Outer = @fieldParentPtr("widget", widget);
@@ -488,7 +489,7 @@ pub const Widget = struct {
             };
         };
 
-        return S;
+        return &S.vtable;
     }
 };
 

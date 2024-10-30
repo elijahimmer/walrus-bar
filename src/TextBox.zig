@@ -332,7 +332,7 @@ pub fn init(args: NewArgs) TextBox {
         .padding_west = args.padding_west orelse args.padding,
 
         .widget = .{
-            .vtable = &Widget.generateVTable(TextBox).vtable,
+            .vtable = Widget.generateVTable(TextBox),
             .area = args.area,
         },
     };

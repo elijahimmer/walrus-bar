@@ -52,9 +52,7 @@ pub inline fn fontScalingFactor(height: u31) u31 {
     return height * 3 / 4;
 }
 
-pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-
+pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
     try self.updateState();
 
     const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
@@ -217,9 +215,7 @@ fn pointToWorkspaceIndex(self: *Workspaces, point: Point) ?WorkspaceIndex {
     return @intCast(workspace_idx);
 }
 
-pub fn clickWidget(widget: *Widget, point: Point, button: MouseButton) void {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-
+pub fn click(self: *Workspaces, point: Point, button: MouseButton) void {
     if (button != .left_click) return;
 
     if (self.pointToWorkspaceIndex(point)) |wksp_idx| {
@@ -279,8 +275,8 @@ pub fn init(args: NewArgs) !Workspaces {
         .workspaces_symbols = args.workspaces_symbols,
 
         .widget = .{
+            .vtable = Widget.generateVTable(Workspaces),
             .area = args.area,
-            .vtable = &Widget.generateVTable(Workspaces).vtable,
         },
     };
 }

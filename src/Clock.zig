@@ -240,7 +240,7 @@ pub fn init(args: NewArgs) Clock {
         .padding = Padding.from(args),
 
         .widget = .{
-            .vtable = &Widget.generateVTable(Clock).vtable,
+            .vtable = Widget.generateVTable(Clock),
 
             .area = args.area,
         },
