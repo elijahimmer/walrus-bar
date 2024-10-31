@@ -1,7 +1,9 @@
-//! TODO: implement padding and workspace spacing.
+//! The widget frontend for whatever workspaces provider
+//! is running, (if any).
 
 pub const Workspaces = @This();
 
+/// Represents one single workspace
 pub const Workspace = struct {
     area: Rect,
     id: WorkspaceID,
@@ -9,37 +11,68 @@ pub const Workspace = struct {
 
     should_redraw: bool = true,
 };
+/// the list type used containing many `Workspace`s
 pub const WorkspacesArray = BoundedArray(Workspace, max_workspace_count);
+/// The list type used for containing all the possible workspace symbols.
+/// Stores as decoded unicode so that we don't have to do the expensive
+/// unicode iteration and decoding to get a symbol.
+pub const WorkspaceSymbolArray = BoundedArray(u21, max_workspace_count);
 
+/// The global workspace state, given by the workspaces worker.
 const workspace_state = &WorkspaceState.global;
 
-background_color: Color,
-text_color: Color,
-
-/// The ID of the workspace the cursor is over.
-/// Reset this every time the workspaces array is changed.
-hover_workspace_idx: ?WorkspaceIndex = null,
-hover_workspace_drawn: ?WorkspaceIndex = null,
-hover_workspace_background: Color,
-hover_workspace_text: Color,
-
-active_workspace_background: Color,
-active_workspace_text: Color,
-/// tells the widget to fill it's entire background not
+/// Tells the widget to fill it's entire background not
 /// taken up by a workspace. Used when removing a workspace to get
 /// rid of the left-behinds.
 fill_background: bool = false,
 
+/// The inner widget for dynamic dispatch and such.
 widget: Widget,
 
-active_workspace: WorkspaceID,
-workspaces: WorkspacesArray,
-workspaces_symbols: []const u8,
+/// The padding of the widget.
+padding: Padding,
 
+/// the spacing in between each workspace
+workspace_spacing: u16,
+
+/// the background color of a normal workspace (not hovered or active)
+background_color: Color,
+/// the text color of a normal workspace (not hovered or active)
+text_color: Color,
+
+/// The index of the workspace the cursor is over.
+/// Reset this every time the workspaces array is changed.
+hover_workspace_idx: ?WorkspaceIndex = null,
+
+/// The index of the workspace the cursor was over
+/// when this widget was last drawn.
+hover_workspace_drawn: ?WorkspaceIndex = null,
+
+/// the background color of whichever workspace is hovered by the cursor.
+hover_workspace_background: Color,
+/// the text color of whichever workspace is hovered by the cursor.
+hover_workspace_text: Color,
+
+/// the background color of whichever workspace is active.
+active_workspace_background: Color,
+/// the text color of whichever workspace is active.
+active_workspace_text: Color,
+/// The ID of whichever workspace is active.
+active_workspace: WorkspaceID,
+
+/// The list of all current workspaces.
+workspaces: WorkspacesArray,
+/// The list of all the possible workspace symbols.
+workspaces_symbols: WorkspaceSymbolArray,
+
+/// Returns the width this widget wants to take up.
 pub fn getWidth(self: *Workspaces) u31 {
-    return self.widget.area.height * max_workspace_count;
+    const area = self.widget.area.removePadding(self.padding) orelse return 0;
+    return (area.height + self.workspace_spacing) * max_workspace_count;
 }
 
+/// Sets the area of this widget to the area given,
+/// and tells it to redraw if needed.
 pub fn setArea(self: *Workspaces, area: Rect) void {
     // TODO: Make this have a dynamic max_workspace_count for the size it can hold.
     assert(area.height * max_workspace_count <= area.width);
@@ -48,10 +81,13 @@ pub fn setArea(self: *Workspaces, area: Rect) void {
     self.widget.full_redraw = true;
 }
 
+/// Given a total height, give the font size for workspace symbols.
 pub inline fn fontScalingFactor(height: u31) u31 {
     return height * 3 / 4;
 }
 
+/// Updates the state of the widget with `updateState`, then proceeds
+/// to draw any changes in state (or redraw fully if needed).
 pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
     try self.updateState();
 
@@ -61,7 +97,10 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
         self.widget.area.drawArea(draw_context, self.background_color);
     }
 
-    const font_size = fontScalingFactor(self.widget.area.height);
+    // if there is no area after padding, just return. Nothing more to draw
+    const area = self.widget.area.removePadding(self.padding) orelse return;
+
+    const font_size = fontScalingFactor(area.height);
 
     self.hover_workspace_idx = if (self.widget.last_motion) |lm| self.pointToWorkspaceIndex(lm) else null;
     defer self.hover_workspace_drawn = self.hover_workspace_idx;
@@ -118,52 +157,48 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
     // fill in the left-behinds
     if (self.fill_background and !full_redraw) {
         const start = if (self.workspaces.len > 0)
-            self.workspaces.len * self.widget.area.height
+            self.workspaces.len * (area.height + self.workspace_spacing)
         else
             0;
 
-        var area = self.widget.area;
+        var area_to_fill = area;
 
-        assert(start < area.width);
+        assert(start < area_to_fill.width);
 
-        area.x += start;
-        area.width -= start;
+        area_to_fill.x += start;
+        area_to_fill.width -= start;
 
-        area.drawArea(draw_context, self.background_color);
-        draw_context.damage(area);
+        area_to_fill.drawArea(draw_context, self.background_color);
+        draw_context.damage(area_to_fill);
     }
 }
 
-fn getWorkspaceSymbol(self: *const Workspaces, idx: WorkspaceID) u21 {
-    var count: WorkspaceIndex = 1;
-
-    var symbol_iter = unicode.Utf8Iterator{ .bytes = self.workspaces_symbols, .i = 0 };
-
-    while (symbol_iter.nextCodepoint()) |code_point| {
-        if (count == idx) return code_point;
-
-        count += 1;
-    }
-
+/// Returns the workspace ID for a given workspace, or if not found, a replacement glyph.
+fn getWorkspaceSymbol(self: *const Workspaces, id: WorkspaceID) u21 {
+    // above zero because WorkspaceID start at 1.
+    if (id > 0 and id <= max_workspace_count) return self.workspaces_symbols.get(@intCast(id - 1));
     return '?'; // unknown workspace
 }
 
+/// Update the state to be in sync with the workspaces worker.
 fn updateState(self: *Workspaces) !void {
     workspace_state.rwlock.lockShared();
     defer workspace_state.rwlock.unlockShared();
 
+    // if there is no widget area after padding, just don't. There is no point.
+    const area = self.widget.area.removePadding(self.padding) orelse return;
+
     switch (std.math.order(workspace_state.workspaces.len, self.workspaces.len)) {
         // add more
         .gt => {
-            const area = self.widget.area;
             var workspace_area = Rect{
-                .x = area.x + self.workspaces.len * area.height,
+                .x = area.x + self.workspaces.len * (area.height + self.workspace_spacing),
                 .y = area.y,
                 .width = area.height, // set width to height
                 .height = area.height,
             };
 
-            for (0..workspace_state.workspaces.len - self.workspaces.len) |_| {
+            for (self.workspaces.len..workspace_state.workspaces.len) |_| {
                 self.widget.area.assertContains(workspace_area);
 
                 self.workspaces.appendAssumeCapacity(.{
@@ -172,7 +207,7 @@ fn updateState(self: *Workspaces) !void {
                     .id = undefined,
                 });
 
-                workspace_area.x += area.height;
+                workspace_area.x += area.height + self.workspace_spacing;
             }
         },
         // remove some
@@ -184,6 +219,7 @@ fn updateState(self: *Workspaces) !void {
         .eq => {},
     }
 
+    assert(workspace_state.workspaces.len == self.workspaces.len);
     for (workspace_state.workspaces.constSlice(), self.workspaces.slice()) |wk_id, *wksp| {
         wksp.id = wk_id;
         const wk_symbol = self.getWorkspaceSymbol(wk_id);
@@ -202,20 +238,27 @@ fn updateState(self: *Workspaces) !void {
     self.active_workspace = workspace_state.active_workspace;
 }
 
-fn pointToWorkspaceIndex(self: *Workspaces, point: Point) ?WorkspaceIndex {
-    const x_local = point.x - self.widget.area.x;
-    const y_local = point.y - self.widget.area.y;
-    _ = y_local;
+// converts a point into the index of the workspace that contains that point,
+// if one indeed contains the point.
+fn pointToWorkspaceIndex(self: *const Workspaces, point: Point) ?WorkspaceIndex {
+    // if the widget is empty after it's padding
+    const area = self.widget.area.removePadding(self.padding) orelse return null;
+    const x_local = point.x - area.x;
 
-    // TODO: Update when add padding, so only hover when over.
+    // if you aren't over any workspaces due to the padding.
+    if (!area.containsPoint(point)) return null;
 
-    const workspace_idx = x_local / self.widget.area.height;
+    // if you are between workspaces, you aren't above one.
+    if (x_local % (area.height + self.workspace_spacing) > area.height) return null;
+
+    const workspace_idx = x_local / (area.height + self.workspace_spacing);
 
     if (workspace_idx >= self.workspaces.len) return null;
     return @intCast(workspace_idx);
 }
 
-pub fn click(self: *Workspaces, point: Point, button: MouseButton) void {
+// Changes workspaces to whichever workspace was clicked on.
+pub fn click(self: *const Workspaces, point: Point, button: MouseButton) void {
     if (button != .left_click) return;
 
     if (self.pointToWorkspaceIndex(point)) |wksp_idx| {
@@ -226,18 +269,47 @@ pub fn click(self: *Workspaces, point: Point, button: MouseButton) void {
     }
 }
 
+/// The arguments for creating a Workspaces widget.
 pub const NewArgs = struct {
+    /// The background color of a normal workspace (not hovered or active)
     background_color: Color,
+    /// The text color of a normal workspace (not hovered or active)
     text_color: Color,
 
+    /// the background color of whichever workspace is hovered by the cursor.
     hover_workspace_background: Color,
+    /// the text color of whichever workspace is hovered by the cursor.
     hover_workspace_text: Color,
 
+    /// the background color of the active workspace.
     active_workspace_background: Color,
+    /// The text color of the active workspace.
     active_workspace_text: Color,
 
-    workspaces_symbols: []const u8 = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ",
+    /// The array of UTF8 characters, each one corresponding
+    /// to a workspace what an ID of it's index + 1.
+    /// (so the first glyph is workspace 1, the second 2, etc.)
+    ///
+    /// Any symbols above the `max_workspace_count` idx, will
+    /// be ignored.
+    workspaces_symbols: []const u8 = "ΑΒΓΔΕΖΗΘΙΚ", //ΛΜΝΞΟΠΡΣΤΥΦΧΨΩ",
 
+    /// The spacing between workspaces in pixels
+    workspace_spacing: u16,
+
+    /// The general padding for each size.
+    padding: u16,
+
+    /// Overrides general padding the top side
+    padding_north: ?u16 = null,
+    /// Overrides general padding the bottom side
+    padding_south: ?u16 = null,
+    /// Overrides general padding the right side
+    padding_east: ?u16 = null,
+    /// Overrides general padding the left side
+    padding_west: ?u16 = null,
+
+    /// The area the widget will take up.
     area: Rect,
 };
 
@@ -260,6 +332,16 @@ pub fn init(args: NewArgs) !Workspaces {
 
     try workspace_state.init();
 
+    // convert given string of workspaces into a decoded unicode array
+    var symbols = WorkspaceSymbolArray{};
+    var utf8_iter = unicode.Utf8Iterator{ .bytes = args.workspaces_symbols, .i = 0 };
+    while (utf8_iter.nextCodepoint()) |char| {
+        symbols.append(char) catch {
+            log.warn("Too many workspace symbols given, only the first {} will be used. Increase max_workspace_count", .{max_workspace_count});
+            break;
+        };
+    }
+
     return .{
         .background_color = args.background_color,
         .text_color = args.text_color,
@@ -272,7 +354,11 @@ pub fn init(args: NewArgs) !Workspaces {
         .active_workspace_text = args.active_workspace_text,
 
         .workspaces = .{},
-        .workspaces_symbols = args.workspaces_symbols,
+        .workspaces_symbols = symbols,
+
+        .padding = Padding.from(args),
+
+        .workspace_spacing = args.workspace_spacing,
 
         .widget = .{
             .vtable = Widget.generateVTable(Workspaces),
@@ -281,6 +367,9 @@ pub fn init(args: NewArgs) !Workspaces {
     };
 }
 
+// Deinitializes the widget, and frees the Workspaces.
+// This should only be called if this Widget was created
+// with `new`, (or allocated manually).
 pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
     const self: *Workspaces = @fieldParentPtr("widget", widget);
 
@@ -288,6 +377,8 @@ pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
     allocator.destroy(self);
 }
 
+/// Deinitializes the widget. This should only be called if
+/// this Widget was created with `init`.
 pub fn deinit(self: *Workspaces) void {
     workspace_state.deinit();
     self.* = undefined;
@@ -312,6 +403,7 @@ const freetype_context = &FreeTypeContext.global;
 
 const drawing = @import("../drawing.zig");
 const Transform = drawing.Transform;
+const Padding = drawing.Padding;
 const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;

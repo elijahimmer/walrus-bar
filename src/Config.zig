@@ -1,3 +1,5 @@
+//! TODO: Implement widget specific color options.
+
 pub const Config = @This();
 
 /// global config. Use only after you have initialized it with init
@@ -24,9 +26,10 @@ height: u16,
 
 title: []const u8,
 
+text_color: Color,
 background_color: Color,
 
-battery_directory: []const u8,
+battery_directory: if (!options.battery_disable) []const u8 else void,
 
 font_size: u16,
 
@@ -70,10 +73,11 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .width = args.width,
         .height = args.height orelse 28,
 
+        .text_color = args.@"text-color" orelse all_colors.rose,
         .background_color = args.@"background-color" orelse all_colors.surface,
         .font_size = args.@"font-size" orelse 20,
 
-        .battery_directory = args.@"battery-directory" orelse default_battery_directory,
+        .battery_directory = if (!options.battery_disable) args.@"battery-directory" orelse default_battery_directory else {},
 
         .title = args.title orelse std.mem.span(std.os.argv[0]),
     };
@@ -83,11 +87,16 @@ const help =
     \\-h, --help                     Display this help and exit.
     \\-w, --width <INT>              The window's width (full screen if not specified)
     \\-l, --height <INT>             The window's height (minimum: 15) (default: 28)
-    \\-t, --title <STR>              The window's title
-    \\-b, --background-color <COLOR> The background color in hex
-    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: ROSE)
-    \\-f, --font-size <INT>          The font size in points
+    \\-t, --title <STR>              The window's title (default: OS Process Name [likely 'walrus-bar'])
+    \\
+++ (if (!options.battery_disable)
     \\    --battery-directory <PATH> The absolute path to the battery directory (default: "/sys/class/power_supply/BAT0")
+else
+    "") ++
+    \\
+    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: ROSE)
+    \\-b, --background-color <COLOR> The background color by name or by hex code (starting with '#') (default: SURFACE)
+    \\-f, --font-size <INT>          The font size in points (default: 20)
     \\
 ;
 
@@ -111,6 +120,8 @@ fn pathParser(path: []const u8) PathParserError![]const u8 {
 
     return path;
 }
+
+const options = @import("options");
 
 const Battery = @import("Battery.zig");
 const default_battery_directory = Battery.default_battery_directory;

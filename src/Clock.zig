@@ -1,4 +1,5 @@
 //! TODO: Clock verbose logging
+//! TODO: Go back over and ensure padding works correctly.
 pub const Clock = @This();
 
 hours_box: TextBox,
@@ -184,7 +185,7 @@ pub const NewArgs = struct {
 
     spacer_char: []const u8 = "",
 
-    padding: u16 = 0,
+    padding: u16,
 
     padding_north: ?u16 = null,
     padding_south: ?u16 = null,
@@ -220,6 +221,7 @@ pub fn init(args: NewArgs) Clock {
         .area = undefined,
 
         // center the text to be more central
+        .padding = args.padding,
         .padding_north = args.padding_north orelse args.padding,
         .padding_south = args.padding_south orelse args.padding,
 

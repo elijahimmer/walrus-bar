@@ -136,7 +136,7 @@ pub const NewArgs = struct {
     inner_padding: ?u16 = null,
 
     /// The general padding for each size.
-    padding: u16 = 0,
+    padding: u16,
 
     /// Overrides general padding the top side
     padding_north: ?u16 = null,

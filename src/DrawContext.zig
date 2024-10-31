@@ -1,6 +1,7 @@
 pub const DrawContext = @This();
-pub const DamageList = if (options.track_damage) BoundedArray(Rect, 16) else void;
-pub const damage_list_init = if (options.track_damage) .{} else undefined;
+pub const MAX_DAMAGE_LIST_LEN = 16;
+pub const DamageList = if (options.track_damage) BoundedArray(Rect, MAX_DAMAGE_LIST_LEN) else void;
+pub const damage_list_init = if (options.track_damage) .{} else {};
 
 output_context: OutputContext,
 
@@ -198,10 +199,12 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
 fn initWidgets(draw_context: *DrawContext) void {
     if (!options.clock_disable) {
         var clock = Clock.init(.{
-            .text_color = colors.rose,
-            .spacer_color = colors.pine,
-            .background_color = colors.surface,
+            .text_color = config.text_color,
+            .background_color = config.background_color,
 
+            .spacer_color = colors.pine,
+
+            .padding = 0,
             .padding_north = @intCast(draw_context.window_area.height / 6),
             .padding_south = @intCast(draw_context.window_area.height / 6),
 
@@ -223,14 +226,17 @@ fn initWidgets(draw_context: *DrawContext) void {
 
     if (!options.workspaces_disable) workspaces: {
         var workspaces = Workspaces.init(.{
-            .background_color = colors.surface,
-            .text_color = colors.rose,
+            .text_color = config.text_color,
+            .background_color = config.background_color,
 
             .hover_workspace_background = colors.hl_med,
             .hover_workspace_text = colors.gold,
 
             .active_workspace_background = colors.pine,
             .active_workspace_text = colors.gold,
+
+            .workspace_spacing = 0,
+            .padding = 0,
 
             .area = .{
                 .x = 0,
@@ -253,7 +259,7 @@ fn initWidgets(draw_context: *DrawContext) void {
 
     if (!options.battery_disable) battery: {
         var battery = Battery.init(.{
-            .background_color = colors.surface,
+            .background_color = config.background_color,
 
             .discharging_color = colors.pine,
             .charging_color = colors.iris,
@@ -465,13 +471,14 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
             damage_last.damageOutline(draw_context);
         }
 
+        assert(draw_context.damage_prev.len == 0);
+        assert(draw_context.damage_list.len < MAX_DAMAGE_LIST_LEN);
+
         draw_context.current_area = draw_context.window_area;
 
         while (draw_context.damage_list.popOrNull()) |damage_item| {
-            draw_context.damage_prev.append(damage_item) catch unreachable;
+            draw_context.damage_prev.appendAssumeCapacity(damage_item);
             damage_item.drawOutline(draw_context, colors.damage);
-
-            damage_item.damageArea(draw_context);
         }
     }
 

@@ -282,7 +282,7 @@ pub const NewArgs = struct {
 
     outline: bool,
 
-    padding: u16 = 0,
+    padding: u16,
 
     padding_north: ?u16 = null,
     padding_south: ?u16 = null,
