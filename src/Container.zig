@@ -7,23 +7,8 @@ inner_widgets: ArrayListUnmanaged(Widget),
 
 widget: Widget,
 
-fn deinitWidget(widget: *Widget, allocator: Allocator) void {
-    const self: *Container = @fieldParentPtr("widget", widget);
-
-    self.deinit(allocator);
-
-    allocator.destroy(self);
-    self.* = undefined;
-}
-
 pub fn deinit(self: *Container, allocator: Allocator) void {
     self.inner_widgets.deinit(allocator);
-}
-
-fn setAreaWidget(widget: *Widget, area: Rect) void {
-    const self: *Container = @fieldParentPtr("widget", widget);
-
-    self.setArea(area);
 }
 
 pub fn setArea(self: Container, area: Rect) void {
@@ -32,21 +17,9 @@ pub fn setArea(self: Container, area: Rect) void {
     @panic("Unimplemented");
 }
 
-fn getWidthWidget(widget: *Widget) u31 {
-    const self: *Container = @fieldParentPtr("widget", widget);
-
-    return self.getWidth();
-}
-
 pub fn getWidth(self: Container) u31 {
     _ = self;
     @panic("Unimplemented");
-}
-
-fn drawWidget(widget: *Widget, draw_context: *DrawContext) anyerror!void {
-    const self: *Container = @fieldParentPtr("widget", widget);
-
-    try self.draw(draw_context);
 }
 
 pub fn draw(self: *Container, draw_context: *DrawContext) !void {
@@ -84,6 +57,10 @@ pub fn init(args: NewWidgetArgs) Container {
             .area = args.area,
         },
     };
+}
+
+test {
+    std.testing.refAllDecls(@This());
 }
 
 const DrawContext = @import("DrawContext.zig");

@@ -1,6 +1,6 @@
 .{
     .name = "walrus-bar",
-    .version = "0.1.1",
+    .version = "0.1.2",
     .dependencies = .{
         .clap = .{
             .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.9.1.tar.gz",

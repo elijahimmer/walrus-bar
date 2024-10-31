@@ -540,7 +540,6 @@ pub fn deinit(self: *Battery) void {
 /// This also re-calculates the battery and charging, font_size and width
 ///     if the area changed (and there is some area after padding)
 pub fn setArea(self: *Battery, area: Rect) void {
-    if (meta.eql(area, self.widget.area)) return;
     defer self.widget.area = area;
     defer self.widget.full_redraw = true;
 
@@ -585,7 +584,10 @@ fn chargingScaling(scale: u31) u31 {
 /// Update or at least test if the glyph isn't ' '
 ///
 /// TODO: try to make this function simpler... or atleast shorter...
-pub fn calculateProgressArea(self: *Battery, area: Rect) void {
+pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
+    // if the area is too small to even hold the widget, don't do any of this.
+    const area = full_area.removePadding(self.padding) orelse return;
+
     const glyph = freetype_context.loadChar(battery_symbol, .{
         .load_mode = .render,
         .font_size = self.battery_font_size,
@@ -671,9 +673,7 @@ pub fn calculateProgressArea(self: *Battery, area: Rect) void {
         unreachable;
     };
 
-    const widget_area = area.removePadding(self.padding) orelse return;
-
-    const glyph_area = widget_area.center(.{ .x = bitmap_width, .y = bitmap_height });
+    const glyph_area = area.center(.{ .x = bitmap_width, .y = bitmap_height });
 
     const progress_area = Rect{
         .x = glyph_area.x + left_side,
@@ -698,7 +698,7 @@ pub fn getWidth(self: *Battery) u31 {
 }
 
 test {
-    std.testing.refAllDecls(Battery);
+    std.testing.refAllDecls(@This());
 }
 
 const options = @import("options");
