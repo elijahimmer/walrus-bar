@@ -110,7 +110,10 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
         draw_context.damage(complete_glyph_area);
 
         // Actually render the glyphs
-        while (utf8_iter.nextCodepoint()) |utf8_char| {
+        var loop_counter: usize = 0;
+        while (utf8_iter.nextCodepoint()) |utf8_char| : (loop_counter += 1) {
+            assert(loop_counter < max_text_len);
+
             // render because we are about to do that.
             const glyph = freetype_context.loadChar(utf8_char, .{
                 .font_size = font_size,
@@ -147,7 +150,9 @@ pub fn getWidth(self: *TextBox) u31 {
 
     var width: u31 = 0;
     var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
-    while (utf8_iter.nextCodepoint()) |utf8_char| {
+    var loop_counter: usize = 0;
+    while (utf8_iter.nextCodepoint()) |utf8_char| : (loop_counter += 1) {
+        assert(loop_counter < max_text_len);
         const glyph = freetype_context.loadChar(utf8_char, .{
             .font_size = font_size,
             .load_mode = .default,
@@ -186,7 +191,9 @@ fn getFontSize(self: *TextBox) u32 {
             var ascent: u63 = 0;
             var descent: u63 = 0;
 
-            while (utf8_iter.nextCodepoint()) |utf8_char| {
+            var loop_counter: usize = 0;
+            while (utf8_iter.nextCodepoint()) |utf8_char| : (loop_counter += 1) {
+                assert(loop_counter < max_text_len);
                 const glyph = freetype_context.loadChar(utf8_char, .{
                     .font_size = area_height_used,
                     .load_mode = .metrics,
@@ -261,7 +268,9 @@ pub fn setText(self: *TextBox, text: []const u8) void {
     var new_utf8_iter = unicode.Utf8Iterator{ .bytes = text, .i = 0 };
     var idx: MaxTextLenInt = 0;
 
-    while (new_utf8_iter.nextCodepointSlice()) |char_slice| {
+    var loop_counter: usize = 0;
+    while (new_utf8_iter.nextCodepointSlice()) |char_slice| : (loop_counter += 1) {
+        assert(loop_counter < max_text_len);
         if (idx + char_slice.len > diff) break;
         idx += @intCast(char_slice.len);
     }

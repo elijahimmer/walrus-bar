@@ -149,14 +149,19 @@ test getWorkspaceID {
     try expect(try getWorkspaceID(resp) == 123);
 }
 
+pub const get_current_workspaces_max_response_len = 4096;
+
 pub fn getCurrentWorkspaces() !WorkspaceArray {
-    const resp = try sendHyprCommand(4096, .workspaces);
+    const resp = try sendHyprCommand(get_current_workspaces_max_response_len, .workspaces);
 
     var workspaces = WorkspaceArray{};
 
     var line_iter = mem.splitScalar(u8, resp.slice(), '\n');
 
-    while (line_iter.next()) |line| {
+    var loop_counter: usize = 0;
+    while (line_iter.next()) |line| : (loop_counter += 1) {
+        assert(loop_counter < get_current_workspaces_max_response_len);
+
         if (mem.startsWith(u8, line, workspace_cmd_start)) {
             const wksp_id = getWorkspaceID(line) catch continue;
             workspaces.append(wksp_id) catch break;
@@ -187,6 +192,7 @@ pub fn work(state: *WorkspaceState) void {
     var non_blocking = true;
 
     // set socket non-blocking
+    // If that doesn't work, it wouldn't be great, but it's alright.
     _ = posix.fcntl(hyprland_socket.handle, posix.F.SETFL, posix.SOCK.NONBLOCK) catch |err| {
         log.warn("Failed to set hyprland socket non-blocking with: '{s}'", .{@errorName(err)});
         non_blocking = false;
@@ -198,10 +204,13 @@ pub fn work(state: *WorkspaceState) void {
 
     // TODO: Find out which atomic order is best for this :)
     while (state.rc.load(.monotonic) > 0) {
+        // if the stream is blocking, then sleep at start, not
+        // on WouldBlock
         if (!non_blocking) std.time.sleep(loop_sleep_time);
 
         const read_length = hyprland_socket.read(&resp_buffer) catch |err| {
             if (err == error.WouldBlock) {
+                // non_blocking should be true, but an assert here maybe wouldn't be good.
                 std.time.sleep(loop_sleep_time);
                 continue;
             }
@@ -224,9 +233,12 @@ pub fn work(state: *WorkspaceState) void {
 
         const resp_used = resp_buffer[0..read_length];
 
-        var lines_iter = mem.splitScalar(u8, resp_used, '\n');
+        var line_iter = mem.splitScalar(u8, resp_used, '\n');
 
-        while (lines_iter.next()) |line| {
+        var loop_counter: usize = 0;
+        while (line_iter.next()) |line| : (loop_counter += 1) {
+            assert(loop_counter < read_length);
+
             if (line.len == 0) continue;
 
             const sep_idx = if (mem.indexOf(u8, line, ">>")) |idx| idx else {
@@ -283,7 +295,7 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
         const extends_list = state.workspaces.len == potential_wksp_idx;
         const can_be_inserted = extends_list or (state.workspaces.len < max_workspace_count and state.workspaces.get(potential_wksp_idx) != new_active);
 
-        // if the workspace doesn't exist
+        // if the workspace doesn't exist, add it.
         if (is_within_max and can_be_inserted) {
             // should never fail to insert.
             state.workspaces.insert(potential_wksp_idx, new_active) catch unreachable;

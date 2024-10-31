@@ -466,7 +466,9 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
     }
 
     if (options.track_damage) {
-        while (draw_context.damage_prev.popOrNull()) |damage_last| {
+        var prev_loop_counter: usize = 0;
+        while (draw_context.damage_prev.popOrNull()) |damage_last| : (prev_loop_counter += 1) {
+            assert(prev_loop_counter < MAX_DAMAGE_LIST_LEN);
             damage_last.drawOutline(draw_context, config.background_color);
             damage_last.damageOutline(draw_context);
         }
@@ -476,7 +478,10 @@ pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
 
         draw_context.current_area = draw_context.window_area;
 
-        while (draw_context.damage_list.popOrNull()) |damage_item| {
+        var damage_loop_counter: usize = 0;
+        while (draw_context.damage_list.popOrNull()) |damage_item| : (damage_loop_counter += 1) {
+            assert(damage_loop_counter < MAX_DAMAGE_LIST_LEN);
+
             draw_context.damage_prev.appendAssumeCapacity(damage_item);
             damage_item.drawOutline(draw_context, colors.damage);
         }

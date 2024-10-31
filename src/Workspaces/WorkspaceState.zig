@@ -31,6 +31,7 @@ pub fn init(self: *WorkspaceState) !void {
 
     if (rc == 0) {
         self.worker_thread = try Thread.spawn(.{}, Impl.work, .{self});
+        self.worker_thread.setName("Workspaces Worker Thread");
     }
 }
 
@@ -43,6 +44,8 @@ pub fn deinit(self: *WorkspaceState) void {
         self.worker_thread.join();
         log.debug("Worker Joined.", .{});
     }
+
+    self.* = undefined;
 }
 
 pub fn setWorkspace(workspace_id: WorkspaceID) !void {

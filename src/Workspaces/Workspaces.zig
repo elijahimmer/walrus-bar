@@ -248,7 +248,7 @@ fn pointToWorkspaceIndex(self: *const Workspaces, point: Point) ?WorkspaceIndex 
     // if you aren't over any workspaces due to the padding.
     if (!area.containsPoint(point)) return null;
 
-    // if you are between workspaces, you aren't above one.
+    // if you are between workspaces, you aren't hovering above one.
     if (x_local % (area.height + self.workspace_spacing) > area.height) return null;
 
     const workspace_idx = x_local / (area.height + self.workspace_spacing);
@@ -335,7 +335,10 @@ pub fn init(args: NewArgs) !Workspaces {
     // convert given string of workspaces into a decoded unicode array
     var symbols = WorkspaceSymbolArray{};
     var utf8_iter = unicode.Utf8Iterator{ .bytes = args.workspaces_symbols, .i = 0 };
-    while (utf8_iter.nextCodepoint()) |char| {
+
+    var loop_counter: usize = 0;
+    while (utf8_iter.nextCodepoint()) |char| : (loop_counter += 1) {
+        assert(loop_counter < max_workspace_count);
         symbols.append(char) catch {
             log.warn("Too many workspace symbols given, only the first {} will be used. Increase max_workspace_count", .{max_workspace_count});
             break;

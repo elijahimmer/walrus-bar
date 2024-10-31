@@ -23,6 +23,17 @@ pub const Internal = struct {
     alloc_user: freetype_utils.AllocUser,
 };
 
+pub const max_cache_entries = options.freetype_cache_size / @sizeOf(Glyph);
+
+comptime {
+    if (max_cache_entries < 50) {
+        @compileError("Choosen freetype-cache-size is too small and will be inefficient");
+    }
+    if (max_cache_entries > 5000) {
+        @compileError("Choosen freetype-cache-size is too large and will be wasteful");
+    }
+}
+
 pub const Cache = AutoArrayHashMap(CacheKey, Glyph);
 
 pub const CacheKey = struct {
@@ -172,7 +183,9 @@ pub fn deinit(self: *FreeTypeContext) void {
 
     var cache_iter = self.cache.iterator();
 
-    while (cache_iter.next()) |entry| {
+    var loop_counter: usize = 0;
+    while (cache_iter.next()) |entry| : (loop_counter += 1) {
+        assert(loop_counter < max_cache_entries);
         entry.value_ptr.deinit(self.allocator);
     }
 
@@ -503,16 +516,6 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
     if (args.bounding_box) {
         max_glyph_area.drawOutline(args.draw_context, colors.love);
         glyph_area.drawOutline(args.draw_context, colors.border);
-    }
-}
-
-comptime {
-    const total_glyphs = options.freetype_cache_size / @sizeOf(Glyph);
-    if (total_glyphs < 50) {
-        @compileError("Choosen freetype-cache-size is too small and will be inefficient");
-    }
-    if (total_glyphs > 5000) {
-        @compileError("Choosen freetype-cache-size is too large and will be wasteful");
     }
 }
 
