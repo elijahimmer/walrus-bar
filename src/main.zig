@@ -70,17 +70,6 @@ test {
     std.testing.refAllDecls(Config);
 }
 
-// build options
-const bo = @import("options");
-fn translateLogLevel(level: bo.@"build.LogLevel") std.log.Level {
-    return switch (level) {
-        .debug => .debug,
-        .info => .info,
-        .warn => .warn,
-        .err => .err,
-    };
-}
-
 pub const std_options = .{
     .logFn = logging.logFn,
     .log_scope_levels = &logging.logging_scope_levels,
@@ -102,6 +91,6 @@ const logging = @import("logging.zig");
 const std = @import("std");
 
 const assert = std.debug.assert;
+const maxInt = std.math.maxInt;
 const panic = std.debug.panic;
 const log = std.log.scoped(.@"walrus-bar");
-const maxInt = std.math.maxInt;

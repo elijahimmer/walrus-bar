@@ -293,6 +293,10 @@ pub fn deinit(self: *Workspaces) void {
     self.* = undefined;
 }
 
+test {
+    std.testing.refAllDecls(@This());
+}
+
 const seat_utils = @import("../seat_utils.zig");
 const MouseButton = seat_utils.MouseButton;
 

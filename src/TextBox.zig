@@ -338,6 +338,10 @@ pub fn init(args: NewArgs) TextBox {
     };
 }
 
+test {
+    std.testing.refAllDecls(@This());
+}
+
 const drawing = @import("drawing.zig");
 const Transform = drawing.Transform;
 const Widget = drawing.Widget;

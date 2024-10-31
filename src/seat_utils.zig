@@ -79,7 +79,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
             switch (@as(MouseButton, @enumFromInt(button.button))) {
                 .middle_click => {
-                    wayland_context.running = false;
+                    //wayland_context.running = false;
                 },
                 .right_click => {
                     for (wayland_context.outputs.items) |*output| {

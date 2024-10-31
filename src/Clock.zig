@@ -251,6 +251,10 @@ pub fn init(args: NewArgs) Clock {
     return self;
 }
 
+test {
+    std.testing.refAllDecls(@This());
+}
+
 const options = @import("options");
 
 const TextBox = @import("TextBox.zig");

@@ -34,6 +34,8 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     var iter = std.process.ArgIterator.init();
     defer iter.deinit();
 
+    // technically, there should always be a first arg,
+    // but whatever.
     const program_name = if (std.os.argv.len > 0)
         std.mem.span(std.os.argv[0])
     else
@@ -52,14 +54,12 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     const args = &res.args;
 
     if (args.help != 0) {
-        clap.help(std.io.getStdErr().writer(), clap.Help, &params, .{}) catch {};
+        clap.help(std.io.getStdOut().writer(), clap.Help, &params, .{}) catch {};
         exit(0);
     }
 
     if (args.height != null and args.height.? < constants.MINIMUM_WINDOW_HEIGHT) {
-        std.io.getStdOut().writer().print("Height provided ({}) is smaller than minimum height ({})", .{ args.height.?, constants.MINIMUM_WINDOW_HEIGHT }) catch {
-            // what would be do here?
-        };
+        std.io.getStdOut().writer().print("Height provided ({}) is smaller than minimum height ({})", .{ args.height.?, constants.MINIMUM_WINDOW_HEIGHT }) catch {};
         exit(1);
     }
 
