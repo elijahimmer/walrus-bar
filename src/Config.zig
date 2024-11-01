@@ -56,13 +56,24 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
 
     const args = &res.args;
 
+    const stdout = std.io.getStdOut();
+    defer stdout.close();
+
+    const stdout_writer = stdout.writer();
+
     if (args.help != 0) {
+        _ = stdout_writer.write(help_message_prelude) catch {};
         clap.help(std.io.getStdOut().writer(), clap.Help, &params, .{}) catch {};
         exit(0);
     }
 
+    if (args.dependencies != 0) {
+        _ = stdout_writer.write(dependencies_message) catch {};
+        exit(0);
+    }
+
     if (args.height != null and args.height.? < constants.MINIMUM_WINDOW_HEIGHT) {
-        std.io.getStdOut().writer().print("Height provided ({}) is smaller than minimum height ({})", .{ args.height.?, constants.MINIMUM_WINDOW_HEIGHT }) catch {};
+        stdout_writer.print("Height provided ({}) is smaller than minimum height ({})", .{ args.height.?, constants.MINIMUM_WINDOW_HEIGHT }) catch {};
         exit(1);
     }
 
@@ -85,6 +96,7 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
 
 const help =
     \\-h, --help                     Display this help and exit.
+    \\    --dependencies             Print a list of the dependencies and versions and exit.
     \\-w, --width <INT>              The window's width (full screen if not specified)
     \\-l, --height <INT>             The window's height (minimum: 15) (default: 28)
     \\-t, --title <STR>              The window's title (default: OS Process Name [likely 'walrus-bar'])
@@ -99,6 +111,29 @@ else
     \\-f, --font-size <INT>          The font size in points (default: 20)
     \\
 ;
+
+const help_message_prelude = std.fmt.comptimePrint("Walrus-Bar v{s}", .{constants.version_str});
+
+const dependencies_message =
+    std.fmt.comptimePrint(
+    \\ Walrus-Bar v{s}
+    \\ Built with:
+    \\ - Zig v{s}
+    \\ - Freetype v{s}
+    //// TODO: Implement version fetching for dependencies.
+    //\\ - Wayland-Client v
+    //\\ - Wayland-Scanner v
+    //\\ - Zig Clap v
+    \\
+    \\
+, .{
+    constants.version_str,
+    constants.freetype_version_str,
+    builtin.zig_version_string,
+    //options.wayland_client_version,
+    //options.wayland_scanner_version,
+    //options.zig_clap_version,
+});
 
 const params = clap.parseParamsComptime(help);
 
@@ -133,7 +168,9 @@ const all_colors = colors.all_colors;
 
 const constants = @import("constants.zig");
 
+const builtin = @import("builtin");
 const std = @import("std");
+
 const assert = std.debug.assert;
 const print = std.debug.print;
 const exit = std.process.exit;

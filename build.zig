@@ -16,8 +16,17 @@ pub fn build(b: *std.Build) void {
     const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file (maybe larger than 5Mbs)?");
     font.addOption([]const u8, "font_data", font_data);
 
+    const versions = b.addOptions();
+    { // versions
+        versions.addOption([]const u8, "version", "0.1.2");
+        versions.addOption([]const u8, "zig_clap_version", "0.0.0");
+    }
+
     const options = b.addOptions();
     const logging_options = b.addOptions();
+
+    const allocation_logging_level = b.option(LogLevel, "allocation-logging-level", "Which logging level to use for allocations (default: warn)") orelse .warn;
+    logging_options.addOption(LogLevel, "allocations", allocation_logging_level);
     { // freetype
         const FreeTypeAllocatorOptions = enum { c, zig };
         const freetype_allocator = b.option(FreeTypeAllocatorOptions, "freetype-allocator", "Which allocator freetype should use (default: zig)") orelse .zig;
@@ -54,14 +63,14 @@ pub fn build(b: *std.Build) void {
         const disable_widget = b.option(bool, widget ++ "-disable", "Enable the " ++ widget ++ "                           (default: false)") orelse false;
         const debug_widget = b.option(bool, widget ++ "-debug", "Enable all the debugging options for " ++ widget ++ " (default: false)") orelse false;
         const enable_outlines = b.option(bool, widget ++ "-outlines", "Enable outlines for " ++ widget ++ "                  (default: debug-widget)") orelse debug_widget;
-        const verbose_logging = b.option(
+        const logging_level = b.option(
             LogLevel,
             widget ++ "-logging",
             "What log level to enable for " ++ widget ++ "         (default: if " ++ widget ++ "-debug is true, debug. Otherwise warn)",
         );
 
         if (disable_widget and debug_widget) @panic("You have to enable " ++ widget ++ " to debug it!");
-        if (disable_widget and verbose_logging != null) @panic("You have to enable " ++ widget ++ " to have it log verbosely it!");
+        if (disable_widget and logging_level != null) @panic("You have to enable " ++ widget ++ " specify it's logging level!");
         if (disable_widget and enable_outlines) @panic("You have to enable " ++ widget ++ " to draw it's outline!");
 
         options.addOption(bool, widget ++ "_disable", disable_widget);
@@ -69,10 +78,10 @@ pub fn build(b: *std.Build) void {
         options.addOption(bool, widget ++ "_outlines", enable_outlines);
 
         if (mem.eql(u8, widget, "workspaces")) {
-            logging_options.addOption(LogLevel, "WorkspacesWorker", verbose_logging orelse if (debug_widget) .debug else .warn);
+            logging_options.addOption(LogLevel, "WorkspacesWorker", logging_level orelse if (debug_widget) .debug else .warn);
         }
 
-        logging_options.addOption(LogLevel, widget, verbose_logging orelse if (debug_widget) .debug else .warn);
+        logging_options.addOption(LogLevel, widget, logging_level orelse if (debug_widget) .debug else .warn);
     }
 
     const exe_unit_tests = b.addTest(.{
@@ -112,6 +121,7 @@ pub fn build(b: *std.Build) void {
         l.step.dependOn(&options.step);
         l.root_module.addOptions("font", font);
         l.root_module.addOptions("options", options);
+        l.root_module.addOptions("versions", versions);
         l.root_module.addOptions("logging-options", logging_options);
 
         l.root_module.addImport("clap", clap.module("clap"));

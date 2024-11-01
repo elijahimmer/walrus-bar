@@ -79,11 +79,15 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
             switch (@as(MouseButton, @enumFromInt(button.button))) {
                 .middle_click => {
-                    //wayland_context.running = false;
+                    if (builtin.mode == .Debug) {
+                        wayland_context.running = false;
+                    }
                 },
                 .right_click => {
-                    for (wayland_context.outputs.items) |*output| {
-                        output.full_redraw = true;
+                    if (builtin.mode == .Debug) {
+                        for (wayland_context.outputs.items) |*output| {
+                            output.full_redraw = true;
+                        }
                     }
                 },
                 else => {
@@ -114,6 +118,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const zwlr = wayland.client.zwlr;
 
+const builtin = @import("builtin");
 const std = @import("std");
 
 const assert = std.debug.assert;

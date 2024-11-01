@@ -10,6 +10,28 @@ pub const WAYLAND_ZWLR_ANCHOR: zwlr.LayerSurfaceV1.Anchor = .{
 // If the window is too small, some stuff won't work.
 pub const MINIMUM_WINDOW_HEIGHT = 15;
 
+pub const version_str = versions.version;
+pub const version = SemanticVersion.parse(versions.version) catch unreachable;
+
+pub const freetype_version_str = std.fmt.comptimePrint("{}.{}.{}", .{
+    freetype.FREETYPE_MAJOR,
+    freetype.FREETYPE_MINOR,
+    freetype.FREETYPE_PATCH,
+});
+pub const freetype_version = SemanticVersion{
+    .major = freetype.FREETYPE_MAJOR,
+    .minor = freetype.FREETYPE_MINOR,
+    .patch = freetype.FREETYPE_PATCH,
+};
+
+const versions = @import("versions");
+
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const zwlr = wayland.client.zwlr;
+
+const freetype = @cImport(@cInclude("freetype/freetype.h"));
+
+const std = @import("std");
+
+const SemanticVersion = std.SemanticVersion;

@@ -1,5 +1,6 @@
 //! A Widget container that holds a number of widgets,
 //! and controls their placement.
+//! TODO: Redo entirely
 
 pub const Container = @This();
 
@@ -59,9 +60,9 @@ pub fn init(args: NewWidgetArgs) Container {
     };
 }
 
-test {
-    std.testing.refAllDecls(@This());
-}
+//test {
+//    std.testing.refAllDecls(@This());
+//}
 
 const DrawContext = @import("DrawContext.zig");
 

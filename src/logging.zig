@@ -11,6 +11,9 @@ const other_logging_scopes = [_]@TypeOf(.enum_literal){
 
 // These have build script specified logging levels.
 const log_scopes = [_]@TypeOf(.enum_literal){
+    // General
+    .Allocations,
+
     // FreeType
     .FreeTypeAlloc,
     .FreeTypeCache,

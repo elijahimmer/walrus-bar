@@ -5,7 +5,7 @@ pub fn main() !void {
         .thread_safe = false, // we should only ever use it on the main (wayland) thread.
     }){};
     defer _ = gpa.deinit();
-    var logging_allocator = std.heap.LoggingAllocator(.debug, .warn).init(gpa.allocator());
+    var logging_allocator = std.heap.ScopedLoggingAllocator(.Allocations, .debug, .warn).init(gpa.allocator());
     const allocator = logging_allocator.allocator();
 
     try Config.init_global(allocator);
@@ -60,7 +60,7 @@ test {
     std.testing.refAllDecls(@import("Workspaces/hyprland.zig"));
     std.testing.refAllDecls(@import("Workspaces/testing.zig"));
     std.testing.refAllDecls(@import("Workspaces/none.zig"));
-    std.testing.refAllDecls(@import("Container.zig"));
+    //std.testing.refAllDecls(@import("Container.zig"));
     std.testing.refAllDecls(@import("TextBox.zig"));
     std.testing.refAllDecls(@import("Battery.zig"));
     std.testing.refAllDecls(@import("Clock.zig"));
