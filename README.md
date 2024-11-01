@@ -1,71 +1,71 @@
 # Walrus Bar
-My third attempt at a wlroots/hyprland status bar.
+A `zwlr-layer-shell-unstable-v1` Status bar for Wayland.
+If you don't know what that means, it just means it's a status bar
+that shows the time and etc.
+
+This should work for most any compositor, and please submit any 
+bug reports if it is found to not work on one of them.
+
+## Features
+A Clock, Battery, and Workspaces widgets are all done.
+
+Sofar this only has Hyprland workspace support, but more should be relatively easy to add.
+Just submit a bug report and ask for it, or make a PR and add it (look at [#Contributing](#Contributing))
+
+The Battery widget just uses the `/sys/class/power_supply` files, but if there are any other ways
+that someones wants supported, submit a bug report and ask.
+
+## Building
+I recommend nix for managing the dependencies, but if you cannot use it, or just don't want,
+all the required build dependencies should be (exact versions not needed):
+
+- pkg-config 0.29.2 (you likely already have this)
+- Zig 0.13.0
+- wayland-client 1.23.1
+- wayland-scanner 1.23.1
+
+Everything else should be bundled in, or managed by the Zig compiler.
+
+### Build Instructions:
+If you have nix installed, with a flake compatible system,
+just run
+```sh
+nix develop
+```
+
+If not, after you acquire the needed dependencies (listed above),
+just run
+
+```sh
+zig build --release=safe
+```
+
+I recommend compiling with `--release=safe`, but you can also do `--release=fast` or `--release=small`
+to optimize for speed and binary size respectively.
+
+## Performance
+As of 0.1.2, the slowest part of this is the overhead of the Wayland connections,
+but multiple outputs and HI-DPI outputs have yet to be thoroughly tested.
+
+Normally this idles 0.0% CPU usage, and ~4 Mib of memory (much of which is the font).
 
 ## Contributing
-Any and all (in good faith) contributions are welcome, be they PRs, Issues, etc.
-I will try my best to get back to any issues, PRs, and questions.
-I will also try to provide feedback on what possible issues are with any
+Any and all (in good faith) contributions are welcome, be they PRs, bug reports, or some third thing I forgot about.
+I will try my best to get back to any bug reports, PRs, and questions. I will also try to provide feedback on what possible issues are with any
 PR, before they are merged.
 
 If you have any features you want supported, just ask.
 Just don't expect it to be done in general or at any short timespan.
 
-### Style
-In general, try to follow NASA's The Power of 10: Rules for Developing Safety-Critical Code
+Look at [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
 
-At the moment, we are going against 9, but I may eventually fix that.
+## Versioning
+The versioning currently, as it is pre-release is `0.MAJOR.MINOR`
+Where Major is breaking changes, and minor is backwards compatible.
+This will be followed loosely until the project is more established.
 
-#### Loops:
-NASA's The Power of 10: Rules for Developing Safety-Critical Code
-> 2. All loops must have fixed bounds. This prevents runaway code.
-
-Every loops that should be finite needs a bound.
-For loops inherently have one, but any while loop whose condition is not the bound,
-they need a finite bound.
-
-The only exception are times when they should actually be indefinite,
-such as the main dispatch loop.
-
-So these are fine
-```zig
-// for loop
-for (slice) |_| {...}
-
-// index going up
-var idx = lower_bound;
-while (idx > upper_bound) : (idx -= 1) {...}
-
-// index going down
-var idx = upper_bound;
-while (idx > lower_bound) : (idx -= 1) {...}
-
-// iterator
-var iter = ...;
-var loop_count = 0;
-
-while (iter.next()) |_| : (loop_count += 1) {
-    assert(loop_count < upper_bound);
-    ...
-}
-
-// boolean loops with bounds
-var running = true;
-var loop_count = 0;
-while (running) : (loop_count += 1) {...}
-```
-
-and these are not allowed (unless excepted above).
-```zig
-// iterators without bounds
-var iter = ...;
-
-while (iter.next()) |_| {...}
-
-// boolean loops without bounds
-while (running) {...}
-```
-
-Still use iterators and boolean based loops, but ensure they don't loop indefinitely.
+But once this is stable (likely not for a while), it will follow [Semantic Versioning 2.0](https://semver.org/)
+Until them, it is just Semver shifted over one.
 
 ## Fonts
 By default this embeds the Fira Nerd Font Mono font into the program,
