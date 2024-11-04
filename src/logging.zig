@@ -23,10 +23,11 @@ const log_scopes = [_]@TypeOf(.enum_literal){
     .Registry,
 
     // Widgets
-    .Battery,
+    .RootContainer,
     .Clock,
-    .Workspaces,
     .WorkspacesWorker,
+    .Workspaces,
+    .Battery,
 };
 
 /// The custom logging function.

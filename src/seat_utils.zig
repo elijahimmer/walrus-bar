@@ -22,7 +22,8 @@ pub fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, wayland_context: *Wayl
 }
 
 pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_context: *WaylandContext) void {
-    assert(wayland_context.pointer != null and pointer == wayland_context.pointer.?);
+    assert(wayland_context.pointer != null);
+    assert(pointer == wayland_context.pointer.?);
     const log_local = std.log.scoped(.Pointer);
 
     const checker = struct {
@@ -42,7 +43,9 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 const draw_context = &wayland_context.outputs.items[output_idx];
                 wayland_context.last_motion_surface = draw_context;
 
-                draw_context.motion(.{
+                assert(draw_context.root_container != null);
+
+                draw_context.root_container.?.motion(.{
                     .x = surface_x,
                     .y = surface_y,
                 });
@@ -55,7 +58,8 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
             const surface_y: u31 = @intCast(@max(motion.surface_y.toInt(), 0));
 
             if (wayland_context.last_motion_surface) |draw_context| {
-                draw_context.motion(.{
+                assert(draw_context.root_container != null);
+                draw_context.root_container.?.motion(.{
                     .x = surface_x,
                     .y = surface_y,
                 });
@@ -69,7 +73,9 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
                 const draw_context = &wayland_context.outputs.items[output_idx];
 
-                draw_context.leave();
+                assert(draw_context.root_container != null);
+
+                draw_context.root_container.?.leave();
             } else {
                 log_local.warn("Cursor left but not on a surface?", .{});
             }
@@ -92,7 +98,8 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 },
                 else => {
                     if (wayland_context.last_motion_surface) |draw_context| {
-                        draw_context.click(@enumFromInt(button.button));
+                        assert(draw_context.root_container != null);
+                        draw_context.root_container.?.click(@enumFromInt(button.button));
                     } else {
                         log_local.warn("Cursor motion but not on a surface?", .{});
                     }

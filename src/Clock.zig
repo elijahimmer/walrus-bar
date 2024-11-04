@@ -110,6 +110,11 @@ fn num2Char(num: u7) [2]u8 {
     };
 }
 
+/// No deinit needed.
+pub fn deinit(self: *Clock) void {
+    _ = self;
+}
+
 /// returns the used width in pixels
 pub fn getWidth(self: *Clock) u31 {
     const hours_width = self.hours_box.getWidth();

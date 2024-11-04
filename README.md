@@ -1,7 +1,7 @@
 # Walrus Bar
 A `zwlr-layer-shell-unstable-v1` Status bar for Wayland.
-If you don't know what that means, it just means it's a status bar
-that shows the time and etc.
+If you don't know what that means, it just means it's a status bar for linux
+that shows the time, workspaces, etc.
 
 This should work for most any compositor, and please submit any 
 bug reports if it is found to not work on one of them.
@@ -16,6 +16,7 @@ The Battery widget just uses the `/sys/class/power_supply` files, but if there a
 that someones wants supported, submit a bug report and ask.
 
 ## Building
+**If you find any dependencies I am missing here, please submit a bug report about it.**
 I recommend nix for managing the dependencies, but if you cannot use it, or just don't want,
 all the required build dependencies should be (exact versions not needed):
 
@@ -48,6 +49,7 @@ As of 0.1.2, the slowest part of this is the overhead of the Wayland connections
 but multiple outputs and HI-DPI outputs have yet to be thoroughly tested.
 
 Normally this idles 0.0% CPU usage, and ~4 Mib of memory (much of which is the font).
+If you load a custom font (which is not yet supported), it will take up more.
 
 ## Contributing
 Any and all (in good faith) contributions are welcome, be they PRs, bug reports, or some third thing I forgot about.

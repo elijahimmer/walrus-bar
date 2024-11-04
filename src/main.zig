@@ -56,11 +56,11 @@ pub fn main() !void {
 test {
     std.testing.refAllDecls(@This());
 
-    std.testing.refAllDecls(@import("Workspaces/Workspaces.zig"));
-    std.testing.refAllDecls(@import("Workspaces/hyprland.zig"));
-    std.testing.refAllDecls(@import("Workspaces/testing.zig"));
-    std.testing.refAllDecls(@import("Workspaces/none.zig"));
-    //std.testing.refAllDecls(@import("Container.zig"));
+    std.testing.refAllDecls(@import("workspaces/Workspaces.zig"));
+    std.testing.refAllDecls(@import("workspaces/hyprland.zig"));
+    std.testing.refAllDecls(@import("workspaces/testing.zig"));
+    std.testing.refAllDecls(@import("workspaces/none.zig"));
+    std.testing.refAllDecls(@import("RootContainer.zig"));
     std.testing.refAllDecls(@import("TextBox.zig"));
     std.testing.refAllDecls(@import("Battery.zig"));
     std.testing.refAllDecls(@import("Clock.zig"));

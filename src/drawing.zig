@@ -432,15 +432,13 @@ pub const Widget = struct {
             pub fn deinit(widget: *Widget, allocator: Allocator) void {
                 const self: *Outer = @fieldParentPtr("widget", widget);
 
-                if (!meta.hasFn(Outer, "deinit")) {
-                    if (@typeInfo(self.deinit).Fn.Params.len > 0) {
-                        assert(@typeInfo(self.deinit).Fn.Params.len > 0);
-                        assert(@typeInfo(self.deinit).Fn.Params[0].type == Allocator);
+                if (@typeInfo(self.deinit).Fn.Params.len > 0) {
+                    assert(@typeInfo(self.deinit).Fn.Params.len > 0);
+                    assert(@typeInfo(self.deinit).Fn.Params[0].type == Allocator);
 
-                        self.deinit(allocator);
-                    } else {
-                        self.deinit(allocator);
-                    }
+                    self.deinit(allocator);
+                } else {
+                    self.deinit(allocator);
                 }
 
                 allocator.destroy(self);
@@ -478,10 +476,10 @@ pub const Widget = struct {
             }
 
             pub const vtable = VTable{
-                .draw = if (std.meta.hasFn(Outer, "drawWidget")) &Outer.drawWidget else &@This().draw,
-                .deinit = if (std.meta.hasFn(Outer, "deinitWidget")) &Outer.deinitWidget else &@This().deinit,
-                .setArea = if (std.meta.hasFn(Outer, "setAreaWidget")) &Outer.setAreaWidget else &@This().setArea,
-                .getWidth = if (std.meta.hasFn(Outer, "getWidthWidget")) &Outer.getWidthWidget else &@This().getWidth,
+                .draw = if (std.meta.hasFn(Outer, "drawWidget")) Outer.drawWidget else @This().draw,
+                .deinit = if (std.meta.hasFn(Outer, "deinitWidget")) Outer.deinitWidget else @This().deinit,
+                .setArea = if (std.meta.hasFn(Outer, "setAreaWidget")) Outer.setAreaWidget else @This().setArea,
+                .getWidth = if (std.meta.hasFn(Outer, "getWidthWidget")) Outer.getWidthWidget else @This().getWidth,
 
                 .motion = if (@hasDecl(Outer, "motion")) @This().motion else null,
                 .leave = if (@hasDecl(Outer, "leave")) @This().leave else null,

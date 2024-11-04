@@ -28,12 +28,9 @@ damage_prev: DamageList = damage_list_init,
 has_started: bool = false,
 full_redraw: bool = true,
 
-last_motion: ?Point = null,
+root_container: ?RootContainer = null,
 
-// TODO: Remove these widgets and make a separate container struct for them.
-widget_left: if (!options.workspaces_disable) ?Workspaces else void = if (!options.workspaces_disable) null else {},
-widget_center: if (!options.clock_disable) ?Clock else void = if (!options.clock_disable) null else {},
-widget_right: if (!options.battery_disable) ?Battery else void = if (!options.battery_disable) null else {},
+last_motion: ?Point = null,
 
 pub const OutputContext = struct {
     output: *wl.Output,
@@ -83,10 +80,7 @@ pub fn deinit(draw_context: *DrawContext, allocator: Allocator) void {
     else
         log.debug("Output id #{} was deinited", .{draw_context.output_context.id});
 
-    if (!options.workspaces_disable) if (draw_context.widget_left) |*widget_left| widget_left.deinit();
-    //// no clock deinit needed
-    //if (!options.clock_disable) if (draw_context.widget_center) |*widget_center| widget_center.deinit();
-    if (!options.battery_disable) if (draw_context.widget_right) |*widget_right| widget_right.deinit();
+    if (draw_context.root_container) |*rc| rc.deinit();
 
     if (draw_context.shm_buffer) |shm_buffer| shm_buffer.destroy();
     if (draw_context.shm_fd) |shm_fd| posix.close(shm_fd);
@@ -131,7 +125,7 @@ fn initializeShm(draw_context: *DrawContext, wayland_context: *WaylandContext) I
 
     draw_context.screen = screen_adjusted;
 
-    @memset(screen_adjusted, all_colors.surface);
+    //@memset(screen_adjusted, config.background_color);
 
     const shm_pool = try wayland_context.shm.?.createPool(fd, size);
 
@@ -184,9 +178,10 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
     assert(draw_context.shm_buffer != null);
     assert(draw_context.shm_fd != null);
 
-    draw_context.initWidgets();
+    if (draw_context.root_container) |*rc| rc.deinit();
+    draw_context.root_container = RootContainer.init(draw_context.window_area);
 
-    draw_context.draw(wayland_context);
+    draw_context.draw();
     draw_context.surface.?.attach(draw_context.shm_buffer.?, 0, 0);
 
     if (draw_context.frame_callback) |fc| fc.destroy();
@@ -194,105 +189,6 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
     draw_context.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
 
     draw_context.surface.?.commit();
-}
-
-fn initWidgets(draw_context: *DrawContext) void {
-    if (!options.clock_disable) {
-        var clock = Clock.init(.{
-            .text_color = config.text_color,
-            .background_color = config.background_color,
-
-            .spacer_color = colors.pine,
-
-            .padding = 0,
-            .padding_north = @intCast(draw_context.window_area.height / 6),
-            .padding_south = @intCast(draw_context.window_area.height / 6),
-
-            .area = .{
-                .x = 0,
-                .y = 0,
-                .width = 1000,
-                .height = draw_context.window_area.height,
-            },
-        });
-
-        var center_area = clock.widget.area;
-        center_area.width = clock.getWidth();
-
-        clock.setArea(draw_context.window_area.center(center_area.dims()));
-
-        draw_context.widget_center = clock;
-    }
-
-    if (!options.workspaces_disable) workspaces: {
-        var workspaces = Workspaces.init(.{
-            .text_color = config.text_color,
-            .background_color = config.background_color,
-
-            .hover_workspace_background = colors.hl_med,
-            .hover_workspace_text = colors.gold,
-
-            .active_workspace_background = colors.pine,
-            .active_workspace_text = colors.gold,
-
-            .workspace_spacing = 0,
-            .padding = 0,
-
-            .area = .{
-                .x = 0,
-                .y = 0,
-                .width = 1000,
-                .height = draw_context.window_area.height,
-            },
-        }) catch |err| {
-            log.warn("Failed to initialize Workspace with: {s}", .{@errorName(err)});
-            break :workspaces;
-        };
-
-        var left_area = workspaces.widget.area;
-        left_area.width = workspaces.getWidth();
-
-        workspaces.setArea(left_area);
-
-        draw_context.widget_left = workspaces;
-    }
-
-    if (!options.battery_disable) battery: {
-        var battery = Battery.init(.{
-            .background_color = config.background_color,
-
-            .discharging_color = colors.pine,
-            .charging_color = colors.iris,
-            .critical_color = colors.love,
-            .warning_color = colors.rose,
-            .full_color = colors.gold,
-
-            .battery_directory = config.battery_directory,
-
-            .padding = @as(u16, @intCast(draw_context.window_area.height / 10)),
-
-            .area = .{
-                .x = draw_context.window_area.width - 1000,
-                .y = 0,
-                .width = 1000,
-                .height = draw_context.window_area.height,
-            },
-        }) catch |err| {
-            log.warn("Failed to initalized Battery with: {s}", .{@errorName(err)});
-            break :battery;
-        };
-
-        var right_area = battery.widget.area;
-        right_area.width = battery.getWidth();
-        right_area.x = draw_context.window_area.width - right_area.width;
-
-        battery.widget.setArea(right_area);
-        log.debug("battery: area: {}, {}", .{ battery.widget.area, battery.progress_area });
-
-        battery.widget.area.assertContains(battery.progress_area);
-
-        draw_context.widget_right = battery;
-    }
 }
 
 pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_context: *WaylandContext) void {
@@ -316,7 +212,7 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
 
     const draw_context = &wayland_context.outputs.items[output_idx];
 
-    draw_context.draw(wayland_context);
+    draw_context.draw();
 
     if (draw_context.frame_callback) |fc| fc.destroy();
     draw_context.frame_callback = draw_context.surface.?.frame() catch @panic("Failed Getting Frame Callback.");
@@ -446,24 +342,17 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
 }
 
 /// Draw all widgets on to the draw_context's buffer.
-pub fn draw(draw_context: *DrawContext, wayland_context: *WaylandContext) void {
-    _ = wayland_context;
+pub fn draw(draw_context: *DrawContext) void {
+    assert(draw_context.root_container != null);
 
     if (draw_context.full_redraw) {
         draw_context.current_area = draw_context.window_area;
         draw_context.window_area.drawArea(draw_context, config.background_color);
     }
 
-    inline for (.{ "widget_left", "widget_center", "widget_right" }) |name| {
-        if (@TypeOf(@field(draw_context, name)) == void) continue;
-
-        if (@field(draw_context, name)) |*w| {
-            if (@TypeOf(w) != *void) {
-                draw_context.current_area = w.widget.area;
-                w.widget.draw(draw_context) catch |err| log.warn("Drawing of '{s}' failed with: '{s}'", .{ name, @errorName(err) });
-            }
-        }
-    }
+    draw_context.root_container.?.draw(draw_context) catch |err| {
+        log.warn("Failed to draw root container with: {s}", .{@errorName(err)});
+    };
 
     if (options.track_damage) {
         var prev_loop_counter: usize = 0;
@@ -660,69 +549,6 @@ test drawBitmap {
     }
 }
 
-pub fn motion(draw_context: *DrawContext, point: Point) void {
-    const last_motion = draw_context.last_motion;
-    defer draw_context.last_motion = point;
-
-    inline for (.{
-        "widget_left",
-        "widget_center",
-        "widget_right",
-    }) |widget_name| {
-        if (@TypeOf(@field(draw_context, widget_name)) == void) continue;
-        if (@field(draw_context, widget_name)) |*widget| {
-            const area = widget.widget.area;
-            if (last_motion) |lm| {
-                if (area.containsPoint(lm) and !area.containsPoint(point)) widget.widget.leave();
-                if (!area.containsPoint(lm) and area.containsPoint(point)) widget.widget.motion(point);
-            }
-            if (area.containsPoint(point)) widget.widget.motion(point);
-        }
-    }
-}
-
-pub fn leave(draw_context: *DrawContext) void {
-    var left = false;
-    inline for (.{
-        "widget_left",
-        "widget_center",
-        "widget_right",
-    }) |widget_name| {
-        if (@TypeOf(@field(draw_context, widget_name)) == void) continue;
-        if (draw_context.last_motion) |last_motion| {
-            if (@field(draw_context, widget_name)) |*widget| {
-                if (widget.widget.area.containsPoint(last_motion)) {
-                    // make sure no widgets overlap
-                    assert(!left);
-                    widget.widget.leave();
-                    left = true;
-                }
-            }
-        }
-    }
-    draw_context.last_motion = null;
-}
-
-pub fn click(draw_context: *DrawContext, button: MouseButton) void {
-    var left = false;
-    inline for (.{
-        "widget_left",
-        "widget_center",
-        "widget_right",
-    }) |widget_name| {
-        if (@TypeOf(@field(draw_context, widget_name)) == void) continue;
-        if (draw_context.last_motion) |last_motion| {
-            if (@field(draw_context, widget_name)) |*widget| {
-                if (widget.widget.area.containsPoint(last_motion)) {
-                    assert(!left);
-                    widget.widget.click(draw_context.last_motion.?, button);
-                    left = true;
-                }
-            }
-        }
-    }
-}
-
 test {
     std.testing.refAllDecls(@This());
 }
@@ -738,14 +564,11 @@ const options = @import("options");
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
-const all_colors = colors.all_colors;
 
 const Config = @import("Config.zig");
 const config = &Config.global;
 
-const Workspaces = @import("Workspaces/Workspaces.zig");
-const Battery = @import("Battery.zig");
-const Clock = @import("Clock.zig");
+const RootContainer = @import("RootContainer.zig");
 
 const drawing = @import("drawing.zig");
 const Widget = drawing.Widget;
