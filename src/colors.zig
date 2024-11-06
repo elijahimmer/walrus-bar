@@ -55,6 +55,17 @@ pub const Color = packed struct(u32) {
     pub fn blend(a: Color, b: Color, ratio: u8) Color {
         return a.composite(b.withAlpha(ratio));
     }
+
+    /// returns if the color is dark according to https://www.w3.org/TR/2008/REC-WCAG20-20081211/#relativeluminancedef
+    pub fn isDark(self: Color) bool {
+        return 0.2126 * flumi(self.r) + 0.7152 * flumi(self.g) + 0.0722 * flumi(self.b) <= 0.17913;
+    }
+
+    fn flumi(component: u8) f32 {
+        const c = @as(f32, @floatFromInt(component)) / 255.0;
+
+        return if (c <= 0.03928) c / 12.92 else std.math.pow(f32, (c + 0.055) / 1.055, 2.4);
+    }
 };
 
 /// turns a rgb int into a color
@@ -186,8 +197,15 @@ test str2Color {
 pub const all_colors = struct {
     // TODO: Add more colors here.
     pub const clear: Color = @bitCast(@as(u32, 0));
-    pub const white: Color = @bitCast(@as(u32, 0xFF_FF_FF_FF));
-    pub const black: Color = @bitCast(@as(u32, 0xFF_00_00_00));
+    pub const white: Color = @bitCast(@as(u32, 0xCFD3CB));
+    pub const black: Color = @bitCast(@as(u32, 0x030501));
+    pub const red: Color = @bitCast(@as(u32, 0xCA0202));
+    pub const green: Color = @bitCast(@as(u32, 0x4D9706));
+    pub const yellow: Color = @bitCast(@as(u32, 0xC49D00));
+    pub const blue: Color = @bitCast(@as(u32, 0x709FCE));
+    pub const magenta: Color = @bitCast(@as(u32, 0x75527D));
+    pub const cyan: Color = @bitCast(@as(u32, 0x0A999B));
+
     pub const main: Color = @bitCast(@as(u32, 0xFF191724));
     pub const surface: Color = @bitCast(@as(u32, 0xFF1f1d2e));
     pub const overlay: Color = @bitCast(@as(u32, 0xFF26233a));
@@ -202,11 +220,14 @@ pub const all_colors = struct {
     pub const hl_low: Color = @bitCast(@as(u32, 0xFF21202e));
     pub const hl_med: Color = @bitCast(@as(u32, 0xFF403d52));
     pub const hl_high: Color = @bitCast(@as(u32, 0xFF524f67));
-
-    pub const damage: Color = love;
-    pub const border: Color = foam;
 };
 pub usingnamespace all_colors;
+
+pub const color_aliases = struct {
+    pub const damage: Color = all_colors.love;
+    pub const border: Color = all_colors.foam;
+};
+pub usingnamespace color_aliases;
 
 pub const ALL_COLORS_LEN = @typeInfo(all_colors).Struct.decls.len;
 

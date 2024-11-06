@@ -19,8 +19,7 @@ pub fn deinit_global() void {
     global = undefined;
 }
 
-clap_res: clap.Result(clap.Help, &params, parsers),
-// general things
+clap_res: clap.Result(clap.Help, &params, parsers), // general things
 program_name: []const u8,
 
 // params
@@ -76,6 +75,11 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         exit(0);
     }
 
+    if (args.colors != 0) {
+        printColorsMessage(stdout_writer) catch {};
+        exit(0);
+    }
+
     if (args.height != null and args.height.? < constants.MINIMUM_WINDOW_HEIGHT) {
         stdout_writer.print("Height provided ({}) is smaller than minimum height ({})", .{ args.height.?, constants.MINIMUM_WINDOW_HEIGHT }) catch {};
         exit(1);
@@ -102,6 +106,7 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
 const help =
     \\-h, --help                     Display this help and exit.
     \\    --dependencies             Print a list of the dependencies and versions and exit.
+    \\    --colors                   Print a list of all the named colors and exit.
     \\-w, --width <INT>              The window's width (full screen if not specified)
     \\-l, --height <INT>             The window's height (minimum: 15) (default: 28)
     \\-t, --title <STR>              The window's title (default: OS Process Name [likely 'walrus-bar'])
@@ -150,6 +155,44 @@ const dependencies_message =
     //options.wayland_scanner_version,
     //options.zig_clap_version,
 });
+
+// TODO: Make this look prettier.
+pub fn printColorsMessage(writer: anytype) !void {
+    const max_width = comptime max_width: {
+        var width = 0;
+        for (colors.COLOR_LIST) |color| {
+            width = @max(width, color.name.len);
+        }
+
+        break :max_width width;
+    };
+
+    const tty_config = std.io.tty.detectConfig(writer.context);
+    const colors_supported = tty_config == .escape_codes;
+
+    inline for (colors.COLOR_LIST) |color| {
+        if (colors_supported) {
+            try writer.print("\x1b[{}m\x1b[38;2;{};{};{}m", .{
+                if (color.color.isDark())
+                    @as(u8, 47)
+                else
+                    40,
+                color.color.r,
+                color.color.g,
+                color.color.b,
+            });
+        }
+        const spacing = .{' '} ** (max_width - color.name.len);
+        try writer.print(color.name ++ spacing ++ " = #{x:0>2}{x:0>2}{x:0>2}{x:0>2}{s}\n", .{
+            color.color.r,
+            color.color.g,
+            color.color.b,
+            color.color.a,
+            // clear color after
+            if (colors_supported) "\x1b[0m" else "",
+        });
+    }
+}
 
 const params = clap.parseParamsComptime(help);
 
