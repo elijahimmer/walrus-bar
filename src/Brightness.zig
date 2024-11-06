@@ -218,7 +218,7 @@ pub fn draw(self: *Brightness, draw_context: *DrawContext) !void {
         if (should_redraw) {
             // if there is no area to put the progress, then don't.
             area_after_padding.drawArea(draw_context, self.background_color);
-            self.drawBrightness(draw_context, area_after_padding, self.brightness_color);
+            self.drawBrightness(draw_context, area_after_padding, null, self.brightness_color);
 
             if (options.brightness_outlines) {
                 self.widget.area.drawOutline(draw_context, colors.border);
@@ -241,7 +241,7 @@ pub fn draw(self: *Brightness, draw_context: *DrawContext) !void {
 
     if (should_redraw) {
         area_after_padding.drawArea(draw_context, self.background_color);
-        self.drawBrightness(draw_context, area_after_padding, self.brightness_color);
+        self.drawBrightness(draw_context, area_after_padding, null, self.brightness_color);
 
         outer_progress_circle.drawArea(draw_context, self.background_color);
 
@@ -274,8 +274,10 @@ pub fn draw(self: *Brightness, draw_context: *DrawContext) !void {
 
             progress_area.assertContains(to_draw);
 
+            self.drawBrightness(draw_context, area_after_padding, to_draw, self.brightness_color);
+
+            outer_progress_circle.drawAreaWithin(draw_context, to_draw, self.background_color);
             progress_circle.drawAreaWithin(draw_context, to_draw, self.brightness_color);
-            // TODO: Fix circle damage
             draw_context.damage(to_draw);
 
             if (options.brightness_outlines) {
@@ -293,8 +295,11 @@ pub fn draw(self: *Brightness, draw_context: *DrawContext) !void {
 
             progress_area.assertContains(to_draw);
 
+            // re-draw everything else within that area so damage works correctly.
+            self.drawBrightness(draw_context, area_after_padding, to_draw, self.brightness_color);
+            outer_progress_circle.drawAreaWithin(draw_context, to_draw, self.background_color);
             progress_circle.drawAreaWithin(draw_context, to_draw, self.background_color);
-            // TODO: Fix damage
+
             draw_context.damage(to_draw);
 
             if (options.brightness_outlines) {
@@ -307,7 +312,7 @@ pub fn draw(self: *Brightness, draw_context: *DrawContext) !void {
 }
 
 /// Draw the brightness character itself.
-fn drawBrightness(self: *const Brightness, draw_context: *DrawContext, area_after_padding: Rect, color: Color) void {
+fn drawBrightness(self: *const Brightness, draw_context: *DrawContext, area_after_padding: Rect, within: ?Rect, color: Color) void {
     freetype_context.drawChar(.{
         .draw_context = draw_context,
 
@@ -315,6 +320,8 @@ fn drawBrightness(self: *const Brightness, draw_context: *DrawContext, area_afte
         .area = area_after_padding,
 
         .font_size = self.brightness_font_size,
+
+        .within = within,
 
         // used for debugging
         .bounding_box = options.brightness_outlines,

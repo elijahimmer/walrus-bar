@@ -1,5 +1,5 @@
 //! A battery widget poll the battery and display it is charging.
-//! TODO: Outline the charging_symbol once that is implemented.
+//! TODO: Outline the charging_symbol instead of drawing it once that is implemented.
 
 pub const Battery = @This();
 
@@ -378,7 +378,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             self.drawBattery(draw_context, area_after_padding, color);
 
             if (state == .charging) {
-                self.drawCharging(draw_context, area_after_padding, self.full_color);
+                self.drawCharging(draw_context, area_after_padding, null, self.full_color);
             }
 
             draw_context.damage(self.widget.area);
@@ -392,10 +392,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
     assert(new_fill_pixels <= progress_area.width);
     defer self.fill_pixels = new_fill_pixels;
 
-    // TODO: implement partial glyph drawing so we can just redraw the charging glyph in the area overriden.
-    const is_charging_and_decreased = self.current_state == .charging and new_fill_pixels < self.fill_pixels;
-
-    if (should_redraw or is_charging_and_decreased) {
+    if (should_redraw) {
         log.debug("fill_ratio: {}/255", .{fill_ratio});
 
         // fill in the background
@@ -425,7 +422,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
         // If it is charging, also draw charging glyph.
         if (state == .charging) {
-            self.drawCharging(draw_context, area_after_padding, self.full_color);
+            self.drawCharging(draw_context, area_after_padding, null, self.full_color);
             // Put composite so the glyph shows through a little
             filled_area.drawAreaComposite(draw_context, color.withAlpha(charging_progress_area_alpha));
         } else {
@@ -453,9 +450,6 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
         },
         // remove some
         .lt => {
-            // until we can draw partial glyph, we full redraw if the bar would decrease and it is charging.
-            assert(state != .charging);
-
             log.debug("fill_ratio: {}/255", .{fill_ratio});
 
             // Draw the area to remove
@@ -464,6 +458,11 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
             to_draw.width = self.fill_pixels - new_fill_pixels;
 
             to_draw.drawArea(draw_context, self.background_color);
+
+            if (state == .charging) {
+                self.drawCharging(draw_context, area_after_padding, to_draw, self.full_color);
+            }
+
             draw_context.damage(to_draw);
         },
         // do nothing
@@ -497,13 +496,14 @@ fn drawBattery(self: *const Battery, draw_context: *DrawContext, area_after_padd
 }
 
 /// Draw the charging character itself.
-fn drawCharging(self: *const Battery, draw_context: *DrawContext, area_after_padding: Rect, color: Color) void {
+fn drawCharging(self: *const Battery, draw_context: *DrawContext, area_after_padding: Rect, within: ?Rect, color: Color) void {
     const draw_area = self.progress_area.center(area_after_padding.dims());
     freetype_context.drawChar(.{
         .draw_context = draw_context,
 
         .text_color = color,
         .area = draw_area,
+        .within = within,
 
         .font_size = self.charging_font_size,
 

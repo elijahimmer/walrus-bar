@@ -2,6 +2,9 @@
 
 pub const Config = @This();
 
+pub const default_text_color = "rose";
+pub const default_background_color = "surface";
+
 /// global config. Use only after you have initialized it with init
 pub var global: Config = undefined;
 
@@ -85,8 +88,8 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .width = args.width,
         .height = args.height orelse 28,
 
-        .text_color = args.@"text-color" orelse all_colors.rose,
-        .background_color = args.@"background-color" orelse all_colors.surface,
+        .text_color = args.@"text-color" orelse @field(colors, default_text_color),
+        .background_color = args.@"background-color" orelse @field(colors, default_background_color),
         .font_size = args.@"font-size" orelse 20,
 
         .battery_directory = if (!options.battery_disable) args.@"battery-directory" orelse default_battery_directory else {},
@@ -115,15 +118,17 @@ else
         \\
     , .{default_brightness_directory})
 else
-    "") ++
+    "") ++ std.fmt.comptimePrint(
     \\
-    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: ROSE)
-    \\-b, --background-color <COLOR> The background color by name or by hex code (starting with '#') (default: SURFACE)
+    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: {s})
+    \\-b, --background-color <COLOR> The background color by name or by hex code (starting with '#') (default: {s})
+    \\
+, .{ default_text_color, default_background_color }) ++
     \\-f, --font-size <INT>          The font size in points (default: 20)
     \\
 ;
 
-const help_message_prelude = std.fmt.comptimePrint("Walrus-Bar v{s}", .{constants.version_str});
+const help_message_prelude = std.fmt.comptimePrint("Walrus-Bar v{s}\n", .{constants.version_str});
 
 const dependencies_message =
     std.fmt.comptimePrint(

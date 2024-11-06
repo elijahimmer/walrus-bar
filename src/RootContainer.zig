@@ -182,7 +182,7 @@ pub fn init(area: Rect) RootContainer {
 
             .battery_directory = config.battery_directory,
 
-            .padding = @as(u16, @intCast(area.height / 10)),
+            .padding = @as(u16, @intCast(area.height / 8)),
 
             .area = .{
                 .x = area.width - 1000,
@@ -208,8 +208,7 @@ pub fn init(area: Rect) RootContainer {
     }
 
     if (!options.brightness_disable) brightness: {
-        // TODO: Make placement better here.
-        const x_pos = if (has_battery and root_container.battery != null) root_container.battery.?.widget.area.x else root_container.area.width - 1000;
+        const x_pos = if (has_battery and root_container.battery != null) root_container.battery.?.widget.area.x - 1000 else root_container.area.width - 1000;
 
         var brightness = Brightness.init(.{
             .background_color = config.background_color,
@@ -218,7 +217,7 @@ pub fn init(area: Rect) RootContainer {
 
             .brightness_directory = config.brightness_directory,
 
-            .padding = @as(u16, @intCast(area.height / 10)),
+            .padding = 0, //@as(u16, @intCast(area.height / 10)),
 
             .area = .{
                 .x = x_pos,
@@ -233,10 +232,10 @@ pub fn init(area: Rect) RootContainer {
 
         var right_area = brightness.widget.area;
         right_area.width = brightness.getWidth();
-        right_area.x = area.width - right_area.width;
+        right_area.x = x_pos + 1000 - right_area.width;
 
         brightness.widget.setArea(right_area);
-        log.debug("battery: area: {}, {}", .{ brightness.widget.area, brightness.progress_area });
+        log.debug("brightness: area: {}, {}", .{ brightness.widget.area, brightness.progress_area });
 
         brightness.widget.area.assertContains(brightness.progress_area);
 

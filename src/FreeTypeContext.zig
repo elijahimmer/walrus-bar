@@ -431,6 +431,10 @@ pub const DrawCharArgs = struct {
     /// The maximum area it can take up.
     area: Rect,
 
+    /// Only draw within this Rect if specified.
+    /// Used for partial glyph drawing.
+    within: ?Rect = null,
+
     /// Draw this character.
     char: u21,
 
@@ -508,7 +512,7 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
     args.draw_context.drawBitmap(.{
         .text_color = args.text_color,
         .no_alpha = args.no_alpha,
-        .max_area = glyph_area,
+        .max_area = args.within orelse glyph_area,
         .origin = origin,
         .glyph = glyph,
     });
