@@ -30,6 +30,7 @@ text_color: Color,
 background_color: Color,
 
 battery_directory: if (!options.battery_disable) []const u8 else void,
+brightness_directory: if (!options.brightness_disable) []const u8 else void,
 
 font_size: u16,
 
@@ -89,6 +90,7 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .font_size = args.@"font-size" orelse 20,
 
         .battery_directory = if (!options.battery_disable) args.@"battery-directory" orelse default_battery_directory else {},
+        .brightness_directory = if (!options.brightness_disable) args.@"brightness-directory" orelse default_brightness_directory else {},
 
         .title = args.title orelse std.mem.span(std.os.argv[0]),
     };
@@ -102,7 +104,16 @@ const help =
     \\-t, --title <STR>              The window's title (default: OS Process Name [likely 'walrus-bar'])
     \\
 ++ (if (!options.battery_disable)
-    \\    --battery-directory <PATH> The absolute path to the battery directory (default: "/sys/class/power_supply/BAT0")
+    std.fmt.comptimePrint(
+        \\    --battery-directory <PATH> The absolute path to the battery directory (default: "{s}")
+        \\
+    , .{default_battery_directory})
+else
+    "") ++ (if (!options.brightness_disable)
+    std.fmt.comptimePrint(
+        \\    --brightness-directory <PATH> The absolute path to the brightness directory (default: "{s}")
+        \\
+    , .{default_brightness_directory})
 else
     "") ++
     \\
@@ -160,7 +171,9 @@ const options = @import("options");
 
 const Battery = @import("Battery.zig");
 const default_battery_directory = Battery.default_battery_directory;
-const default_battery_name = Battery.default_battery_name;
+
+const Brightness = @import("Brightness.zig");
+const default_brightness_directory = Brightness.default_brightness_directory;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;

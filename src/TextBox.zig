@@ -17,7 +17,7 @@ pub const ScalingType = enum {
 
 pub const ScalingTypeArg = union(ScalingType) {
     normal,
-    /// should live as long as the widget.
+    /// should live as long as the TextBox.
     max: []const u8,
 };
 
@@ -25,10 +25,10 @@ pub const ScalingTypeArg = union(ScalingType) {
 const ScalingTypeInfoMax = struct {
     str: []const u8,
 
-    max_ascent: u31,
-    max_descent: u31,
+    max_ascent: Size,
+    max_descent: Size,
 
-    last_calculated_scale: ?u31,
+    last_calculated_scale: ?Size,
 };
 
 const ScalingTypeInfo = union(ScalingType) {
@@ -39,29 +39,30 @@ const ScalingTypeInfo = union(ScalingType) {
 text: TextArray,
 
 text_first_diff: ?MaxTextLenInt = null,
-last_calculated_width: ?u31 = null,
+last_calculated_width: ?Size = null,
 
 text_color: Color,
 background_color: Color,
 
 should_outline: bool,
 
-padding_north: u16,
-padding_south: u16,
-padding_east: u16,
-padding_west: u16,
+// TODO: Switch to padding struct.
+padding_north: Size,
+padding_south: Size,
+padding_east: Size,
+padding_west: Size,
 
 scaling: ScalingTypeInfo,
 
-widget: Widget,
+area: Rect,
+full_redraw: bool = true,
 
-pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
-    const self: *TextBox = @fieldParentPtr("widget", widget);
-
+pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
     defer self.text_first_diff = null;
-    const area = self.widget.area;
+    defer self.full_redraw = false;
+    const area = self.area;
 
-    const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
+    const full_redraw = draw_context.full_redraw or self.full_redraw;
     const render_text_idx: ?MaxTextLenInt = if (full_redraw)
         0
     else
@@ -71,11 +72,11 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
         const font_size = self.getFontSize();
 
         // the leftmost point the glyph should draw
-        var pen_x = @as(u63, area.x) << 6;
+        var pen_x = @as(u32, area.x) << 6;
 
         // sets the Y pen to the glyph's origin (bottom left-ish)
         const pen_y = (area.y << 6) + switch (self.scaling) {
-            .normal => @as(u31, @intCast(freetype_context.font_face.*.ascender + freetype_context.font_face.*.descender)),
+            .normal => @as(Size, @intCast(freetype_context.font_face.*.ascender + freetype_context.font_face.*.descender)),
             .max => |max_info| ((area.height << 6) - max_info.max_descent) - (self.padding_south << 6) - (1 << 6), // needs the - 1 so that it is more centered.
         };
 
@@ -124,7 +125,7 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
             draw_context.drawBitmap(.{
                 .origin = .{ .x = @intCast(pen_x >> 6), .y = @intCast(pen_y >> 6) },
                 .text_color = self.text_color,
-                .max_area = self.widget.area,
+                .max_area = self.area,
                 .glyph = glyph,
 
                 .no_alpha = false,
@@ -142,13 +143,13 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
 /// Gets the total width of the textbox.
 /// This only computes it if the position or font size was changed
 /// since last calculation.
-pub fn getWidth(self: *TextBox) u31 {
+pub fn getWidth(self: *TextBox) Size {
     // if it was already calculated and the size hasn't changed, return that.
     if (self.last_calculated_width) |width| return width;
 
     const font_size = self.getFontSize();
 
-    var width: u31 = 0;
+    var width: Size = 0;
     var utf8_iter = unicode.Utf8Iterator{ .bytes = self.text.slice(), .i = 0 };
     var loop_counter: usize = 0;
     while (utf8_iter.nextCodepoint()) |utf8_char| : (loop_counter += 1) {
@@ -173,23 +174,23 @@ pub fn getWidth(self: *TextBox) u31 {
 /// This does some calculation depending on the scaling type.
 ///
 /// Assumes the text size is different, and always sets it.
-fn getFontSize(self: *TextBox) u32 {
-    const area = self.widget.area;
+fn getFontSize(self: *TextBox) Size {
+    const area = self.area;
     const area_height_used = (area.height - self.padding_north) - self.padding_south;
 
     switch (self.scaling) {
         .normal => return area_height_used,
         .max => |*max_info| {
             // if the last_calculated_scale is correct, just use that,
-            if (!self.widget.full_redraw and max_info.last_calculated_scale != null and self.text_first_diff == null) {
+            if (!self.full_redraw and max_info.last_calculated_scale != null and self.text_first_diff == null) {
                 return max_info.last_calculated_scale.?;
             }
             // else, calculate the scale.
 
             var utf8_iter = unicode.Utf8Iterator{ .bytes = max_info.str, .i = 0 };
 
-            var ascent: u63 = 0;
-            var descent: u63 = 0;
+            var ascent: u32 = 0;
+            var descent: u32 = 0;
 
             var loop_counter: usize = 0;
             while (utf8_iter.nextCodepoint()) |utf8_char| : (loop_counter += 1) {
@@ -201,15 +202,15 @@ fn getFontSize(self: *TextBox) u32 {
                 });
 
                 // metrics is only null when transform != identity
-                const height = glyph.metrics.?.height;
-                const y_bearing = glyph.metrics.?.horiBearingY;
+                const height: u32 = @intCast(glyph.metrics.?.height);
+                const y_bearing: u32 = @intCast(glyph.metrics.?.horiBearingY);
 
                 ascent = @max(ascent, y_bearing);
                 descent = @max(descent, height - y_bearing);
             }
 
             const height = ascent + descent;
-            const area_height = area_height_used << 6;
+            const area_height = @as(u32, area_height_used) << 6;
 
             const font_height = (area_height * area_height) / height;
 
@@ -225,15 +226,9 @@ fn getFontSize(self: *TextBox) u32 {
     }
 }
 
-/// Only call if the TextBox was create via `new`
-pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
-    const self: *TextBox = @fieldParentPtr("widget", widget);
-    allocator.destroy(self);
-}
-
 pub fn setArea(self: *TextBox, area: Rect) void {
-    self.widget.area = area;
-    self.widget.full_redraw = true;
+    self.area = area;
+    self.full_redraw = true;
     self.last_calculated_width = null;
 }
 
@@ -245,16 +240,15 @@ pub const SetColorsArgs = struct {
 pub fn setColors(self: *TextBox, args: SetColorsArgs) void {
     if (!std.meta.eql(self.background_color, args.background_color)) {
         self.background_color = args.background_color;
-        self.widget.full_redraw = true;
+        self.full_redraw = true;
     }
     if (!std.meta.eql(self.text_color, args.text_color)) {
         self.text_color = args.text_color;
-        self.widget.full_redraw = true;
+        self.full_redraw = true;
     }
 }
 
 pub fn setText(self: *TextBox, text: []const u8) void {
-    const widget = &self.widget;
     assert(text.len <= max_text_len);
 
     const diff: MaxTextLenInt = @intCast(mem.indexOfDiff(u8, text, self.text.slice()) orelse return);
@@ -262,7 +256,7 @@ pub fn setText(self: *TextBox, text: []const u8) void {
     self.text.resize(text.len) catch @panic("");
     @memcpy(self.text.slice()[diff..text.len], text[diff..]);
 
-    if (diff == 0) widget.full_redraw = true;
+    if (diff == 0) self.full_redraw = true;
 
     // Find the first unicode character that is different.
     var new_utf8_iter = unicode.Utf8Iterator{ .bytes = text, .i = 0 };
@@ -279,7 +273,7 @@ pub fn setText(self: *TextBox, text: []const u8) void {
     self.last_calculated_width = null;
 }
 
-pub const NewArgs = struct {
+pub const InitArgs = struct {
     area: Rect,
 
     text: []const u8,
@@ -291,23 +285,15 @@ pub const NewArgs = struct {
 
     outline: bool,
 
-    padding: u16,
+    padding: Size,
 
-    padding_north: ?u16 = null,
-    padding_south: ?u16 = null,
-    padding_east: ?u16 = null,
-    padding_west: ?u16 = null,
+    padding_north: ?Size = null,
+    padding_south: ?Size = null,
+    padding_east: ?Size = null,
+    padding_west: ?Size = null,
 };
 
-pub fn new(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
-    const text_box = try allocator.create(TextBox);
-
-    text_box.* = TextBox.init(args);
-
-    return &text_box.widget;
-}
-
-pub fn init(args: NewArgs) TextBox {
+pub fn init(args: InitArgs) TextBox {
     assert(unicode.utf8ValidateSlice(args.text));
 
     switch (args.scaling) {
@@ -340,10 +326,7 @@ pub fn init(args: NewArgs) TextBox {
         .padding_east = args.padding_east orelse args.padding,
         .padding_west = args.padding_west orelse args.padding,
 
-        .widget = .{
-            .vtable = Widget.generateVTable(TextBox),
-            .area = args.area,
-        },
+        .area = args.area,
     };
 }
 
@@ -353,9 +336,9 @@ test {
 
 const drawing = @import("drawing.zig");
 const Transform = drawing.Transform;
-const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
+const Size = drawing.Size;
 
 const DrawContext = @import("DrawContext.zig");
 const FreeTypeContext = @import("FreeTypeContext.zig");

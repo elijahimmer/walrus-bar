@@ -34,9 +34,6 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
     switch (event) {
         .enter => |enter| {
-            const surface_x: u31 = @intCast(@max(enter.surface_x.toInt(), 0));
-            const surface_y: u31 = @intCast(@max(enter.surface_y.toInt(), 0));
-
             if (enter.surface) |surface| {
                 const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
@@ -44,25 +41,31 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 wayland_context.last_motion_surface = draw_context;
 
                 assert(draw_context.root_container != null);
+                const root_container = &draw_context.root_container.?;
 
-                draw_context.root_container.?.motion(.{
-                    .x = surface_x,
-                    .y = surface_y,
-                });
+                const point = Point{
+                    .x = @intCast(@max(enter.surface_x.toInt(), 0)),
+                    .y = @intCast(@max(enter.surface_y.toInt(), 0)),
+                };
+
+                root_container.area.assertContainsPoint(point);
+                root_container.motion(point);
             } else {
                 log_local.warn("Cursor entered but not on a surface?", .{});
             }
         },
         .motion => |motion| {
-            const surface_x: u31 = @intCast(@max(motion.surface_x.toInt(), 0));
-            const surface_y: u31 = @intCast(@max(motion.surface_y.toInt(), 0));
-
             if (wayland_context.last_motion_surface) |draw_context| {
                 assert(draw_context.root_container != null);
-                draw_context.root_container.?.motion(.{
-                    .x = surface_x,
-                    .y = surface_y,
-                });
+                const root_container = &draw_context.root_container.?;
+
+                const point = Point{
+                    .x = @intCast(@max(motion.surface_x.toInt(), 0)),
+                    .y = @intCast(@max(motion.surface_y.toInt(), 0)),
+                };
+
+                root_container.area.assertContainsPoint(point);
+                root_container.motion(point);
             } else {
                 log_local.warn("Cursor motion but not on a surface?", .{});
             }
@@ -120,6 +123,9 @@ pub const MouseButton = enum(u16) {
 
 const WaylandContext = @import("WaylandContext.zig");
 const DrawContext = @import("DrawContext.zig");
+
+const drawing = @import("drawing.zig");
+const Point = drawing.Point;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;

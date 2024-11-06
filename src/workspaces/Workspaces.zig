@@ -33,7 +33,7 @@ widget: Widget,
 padding: Padding,
 
 /// the spacing in between each workspace
-workspace_spacing: u16,
+workspace_spacing: Size,
 
 /// the background color of a normal workspace (not hovered or active)
 background_color: Color,
@@ -66,7 +66,7 @@ workspaces: WorkspacesArray,
 workspaces_symbols: WorkspaceSymbolArray,
 
 /// Returns the width this widget wants to take up.
-pub fn getWidth(self: *Workspaces) u31 {
+pub fn getWidth(self: *Workspaces) Size {
     const area = self.widget.area.removePadding(self.padding) orelse return 0;
     return (area.height + self.workspace_spacing) * max_workspace_count;
 }
@@ -82,7 +82,7 @@ pub fn setArea(self: *Workspaces, area: Rect) void {
 }
 
 /// Given a total height, give the font size for workspace symbols.
-pub inline fn fontScalingFactor(height: u31) u31 {
+pub inline fn fontScalingFactor(height: Size) Size {
     return height * 3 / 4;
 }
 
@@ -295,19 +295,19 @@ pub const NewArgs = struct {
     workspaces_symbols: []const u8 = "ΑΒΓΔΕΖΗΘΙΚ", //ΛΜΝΞΟΠΡΣΤΥΦΧΨΩ",
 
     /// The spacing between workspaces in pixels
-    workspace_spacing: u16,
+    workspace_spacing: Size,
 
     /// The general padding for each size.
-    padding: u16,
+    padding: Size,
 
     /// Overrides general padding the top side
-    padding_north: ?u16 = null,
+    padding_north: ?Size = null,
     /// Overrides general padding the bottom side
-    padding_south: ?u16 = null,
+    padding_south: ?Size = null,
     /// Overrides general padding the right side
-    padding_east: ?u16 = null,
+    padding_east: ?Size = null,
     /// Overrides general padding the left side
-    padding_west: ?u16 = null,
+    padding_west: ?Size = null,
 
     /// The area the widget will take up.
     area: Rect,
@@ -336,9 +336,8 @@ pub fn init(args: NewArgs) !Workspaces {
     var symbols = WorkspaceSymbolArray{};
     var utf8_iter = unicode.Utf8Iterator{ .bytes = args.workspaces_symbols, .i = 0 };
 
-    var loop_counter: usize = 0;
-    while (utf8_iter.nextCodepoint()) |char| : (loop_counter += 1) {
-        assert(loop_counter < max_workspace_count);
+    // No loop counter, append bounds it already.
+    while (utf8_iter.nextCodepoint()) |char| {
         symbols.append(char) catch {
             log.warn("Too many workspace symbols given, only the first {} will be used. Increase max_workspace_count", .{max_workspace_count});
             break;
@@ -410,6 +409,7 @@ const Padding = drawing.Padding;
 const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
+const Size = drawing.Size;
 
 const colors = @import("../colors.zig");
 const Color = colors.Color;

@@ -11,6 +11,7 @@ const Impl = switch (options.workspaces_provider) {
     .testing => @import("testing.zig"),
     .none => @import("none.zig"),
 };
+pub const setWorkspace = &Impl.setWorkspace;
 
 pub const WorkspaceID = i32;
 
@@ -63,10 +64,6 @@ pub fn deinit(self: *WorkspaceState) void {
     }
 
     self.* = undefined;
-}
-
-pub fn setWorkspace(workspace_id: WorkspaceID) !void {
-    try Impl.setWorkspace(workspace_id);
 }
 
 pub const RC = u32;

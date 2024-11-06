@@ -149,7 +149,7 @@ test getWorkspaceID {
     try expect(try getWorkspaceID(resp) == 123);
 }
 
-pub const get_current_workspaces_max_response_len = 4096;
+const get_current_workspaces_max_response_len = 4096;
 
 pub fn getCurrentWorkspaces() !WorkspaceArray {
     const resp = try sendHyprCommand(get_current_workspaces_max_response_len, .workspaces);
@@ -354,7 +354,8 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
 }
 
 pub fn setWorkspace(wksp_id: WorkspaceID) !void {
-    _ = try sendHyprCommand(0, .{ .move_to_workspace = wksp_id });
+    const resp = try sendHyprCommand(2, .{ .move_to_workspace = wksp_id });
+    assert(mem.eql(u8, resp.slice(), "ok"));
 }
 
 test {

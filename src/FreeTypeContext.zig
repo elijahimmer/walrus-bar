@@ -40,7 +40,7 @@ pub const CacheKey = struct {
     /// A unicode character
     char: u21,
     /// The pixel font size
-    font_size: u32,
+    font_size: Size,
     /// The glyph's transform
     transform: Transform,
 };
@@ -53,13 +53,13 @@ pub const Glyph = struct {
     /// Metrics are invalid if a Transform is used.
     metrics: ?freetype.FT_Glyph_Metrics,
 
-    advance_x: u31,
+    advance_x: Size,
 
     bitmap_top: i32,
     bitmap_left: i32,
 
-    bitmap_width: u31,
-    bitmap_height: u31,
+    bitmap_width: Size,
+    bitmap_height: Size,
     bitmap_buffer: ?[]const u8,
 
     load_mode: LoadMode,
@@ -73,10 +73,10 @@ pub const Glyph = struct {
         const transformed = !transform.isIdentity();
 
         // change dimensions if it is rotated right or left.
-        const bitmap_width: u31 = @intCast(bitmap.width);
-        const bitmap_height: u31 = @intCast(bitmap.rows);
-        const bitmap_top: i32 = glyph.*.bitmap_top;
-        const bitmap_left: i32 = glyph.*.bitmap_left;
+        const bitmap_width: Size = @intCast(bitmap.width);
+        const bitmap_height: Size = @intCast(bitmap.rows);
+        const bitmap_top: SizeSigned = glyph.*.bitmap_top;
+        const bitmap_left: SizeSigned = glyph.*.bitmap_left;
 
         const bitmap_buffer = if (load_mode == .render) bitmap_buffer: {
             const bitmap_buffer = allocator.alloc(u8, bitmap_height * bitmap_width) catch @panic("Out Of Memory");
@@ -194,14 +194,14 @@ pub fn deinit(self: *FreeTypeContext) void {
     self.* = undefined;
 }
 
-//fn setFontSize(self: *const FreeTypeContext, output_context: *const DrawContext.OutputContext, font_size: u32) void {
+//fn setFontSize(self: *const FreeTypeContext, output_context: *const DrawContext.OutputContext, font_size: Size) void {
 //    // screen size in milimeters
-//    const physical_height: u32 = output_context.physical_height;
-//    const physical_width: u32 = output_context.physical_width;
+//    const physical_height: Size = output_context.physical_height;
+//    const physical_width: Size = output_context.physical_width;
 //
 //    // screen pixel size
-//    const height: u32 = output_context.height;
-//    const width: u32 = output_context.width;
+//    const height: Size = output_context.height;
+//    const width: Size = output_context.width;
 //
 //    assert(height > 0);
 //    assert(width > 0);
@@ -221,7 +221,7 @@ pub fn deinit(self: *FreeTypeContext) void {
 //}
 
 /// Sets the current pixel font size of FreeType.
-fn setFontPixelSize(self: *const FreeTypeContext, font_size: u32) void {
+fn setFontPixelSize(self: *const FreeTypeContext, font_size: Size) void {
     assert(font_size > 0);
 
     const err = freetype.FT_Set_Pixel_Sizes(
@@ -247,13 +247,13 @@ pub const MaximumFontSizeArgs = struct {
     transform: Transform,
 
     /// Applies to new scale to downscale if wanted.
-    scaling_fn: ?*const fn (u31) u31,
+    scaling_fn: ?*const fn (Size) Size,
 };
 
 pub const MaximumFontSizeReturn = struct {
-    font_size: u31,
-    width: u31,
-    height: u31,
+    font_size: Size,
+    width: Size,
+    height: Size,
 };
 
 /// Returns the largest font size specified glyph can be to fit in the area.
@@ -262,7 +262,7 @@ pub const MaximumFontSizeReturn = struct {
 pub fn maximumFontSize(self: *FreeTypeContext, args: MaximumFontSizeArgs) MaximumFontSizeReturn {
     const area = args.area;
     const scale_initial = @min(area.width, area.height);
-    const width_initial: u31, const height_initial: u31 = if (args.transform.isIdentity()) initial: {
+    const width_initial: Size, const height_initial: Size = if (args.transform.isIdentity()) initial: {
         const metrics_initial = self.loadCharNoCache(args.char, .{
             .font_size = scale_initial,
             .load_mode = .metrics,
@@ -290,14 +290,14 @@ pub fn maximumFontSize(self: *FreeTypeContext, args: MaximumFontSizeArgs) Maximu
     log.debug("maximumFontSize :: area width: {}, height: {}", .{ area.width, area.height });
     log.debug("\tinitial width: {}, height: {}", .{ width_initial, height_initial });
 
-    const width_scaling = area.width * area.width / width_initial;
-    const height_scaling = area.height * area.height / height_initial;
+    const width_scaling = @as(u32, area.width) * area.width / width_initial;
+    const height_scaling = @as(u32, area.height) * area.height / height_initial;
 
-    const scaling = @min(width_scaling, height_scaling);
+    const scaling: Size = @intCast(@min(width_scaling, height_scaling));
 
     const scale_new = if (args.scaling_fn) |scaling_fn| scaling_fn(scaling) else scaling;
 
-    const width_new: u31, const height_new: u31 = if (args.transform.isIdentity()) new: {
+    const width_new: Size, const height_new: Size = if (args.transform.isIdentity()) new: {
         const metrics_initial = self.loadCharNoCache(args.char, .{
             .font_size = scale_new,
             .load_mode = .metrics,
@@ -333,7 +333,7 @@ pub const LoadCharOptions = struct {
     load_mode: LoadMode,
     transform: Transform,
     //rotation: Rotation,
-    font_size: u32,
+    font_size: Size,
 };
 
 /// Returns a pointer to a `Glyph`. This pointer may be invalidated after another call to loadChar,
@@ -441,7 +441,7 @@ pub const DrawCharArgs = struct {
     no_alpha: bool = false,
 
     /// At this font size.
-    font_size: u32,
+    font_size: Size,
 
     /// The transform of the bitmap
     transform: Transform,
@@ -456,9 +456,9 @@ pub const DrawCharArgs = struct {
 
     pub const WidthOptions = union(enum) {
         /// Make the max glyph area a specific width.
-        fixed: u31,
+        fixed: Size,
         /// Scale the glyph's advance width by a function.
-        scaling: *const fn (u31) u31,
+        scaling: *const fn (Size) Size,
         /// just use the glyph's advance width
         advance,
     };
@@ -493,8 +493,8 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
 
     // Metrics are no updated with the transform.
     const origin = if (glyph.metrics) |metrics| origin: {
-        const glyph_height: u31 = @intCast(metrics.height >> 6);
-        const glyph_upper: u31 = @intCast(metrics.horiBearingY >> 6);
+        const glyph_height: Size = @intCast(metrics.height >> 6);
+        const glyph_upper: Size = @intCast(metrics.horiBearingY >> 6);
 
         break :origin Point{
             .x = @intCast(glyph_area.x - glyph.bitmap_left),
@@ -581,10 +581,12 @@ const DrawContext = @import("DrawContext.zig");
 const Config = @import("Config.zig");
 
 const drawing = @import("drawing.zig");
+const SizeSigned = drawing.SizeSigned;
 const Transform = drawing.Transform;
 const Align = drawing.Align;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
+const Size = drawing.Size;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;

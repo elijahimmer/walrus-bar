@@ -27,6 +27,7 @@ const log_scopes = [_]@TypeOf(.enum_literal){
     .Clock,
     .WorkspacesWorker,
     .Workspaces,
+    .Brightness,
     .Battery,
 };
 

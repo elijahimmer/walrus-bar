@@ -18,16 +18,16 @@ widget: Widget,
 
 padding: Padding,
 
-inline fn timeGlyphScaling(size: u31) u31 {
+inline fn timeGlyphScaling(size: Size) Size {
     return size * 27 / 20;
 }
 
-inline fn spacerGlyphScaling(size: u31) u31 {
+inline fn spacerGlyphScaling(size: Size) Size {
     return size * 8 / 10;
 }
 
 // TODO: use FreeTypeContext.maxGlyphSize(...)
-inline fn spacerFontSize(self: *const Clock) u31 {
+inline fn spacerFontSize(self: *const Clock) Size {
     const area_wo_padding = self.widget.area.removePadding(self.padding) orelse return 0;
     return spacerGlyphScaling(area_wo_padding.height);
 }
@@ -35,6 +35,12 @@ inline fn spacerFontSize(self: *const Clock) u31 {
 /// conversion to draw from the widget vtable
 pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     const self: *Clock = @fieldParentPtr("widget", widget);
+    defer {
+        self.widget.full_redraw = false;
+        assert(!self.hours_box.full_redraw);
+        assert(!self.minutes_box.full_redraw);
+        assert(!self.seconds_box.full_redraw);
+    }
 
     const tod = ctime.time(null);
     const localtime = ctime.localtime(&tod);
@@ -43,31 +49,31 @@ pub fn drawWidget(widget: *Widget, draw_context: *DrawContext) !void {
     const should_redraw = draw_context.full_redraw or self.widget.full_redraw;
 
     if (should_redraw) {
-        self.hours_box.widget.full_redraw = true;
-        self.minutes_box.widget.full_redraw = true;
-        self.seconds_box.widget.full_redraw = true;
+        self.hours_box.full_redraw = true;
+        self.minutes_box.full_redraw = true;
+        self.seconds_box.full_redraw = true;
         if (options.clock_outlines) self.widget.area.drawOutline(draw_context, colors.border);
     }
 
+    // if the padding is larger than the area, then there is nothing to draw.
+    const area_wo_padding = self.widget.area.removePadding(self.padding) orelse return;
+
     self.hours_box.setText(&num2Char(@intCast(localtime.*.tm_hour)));
     // there are no errors that can happen.
-    self.hours_box.widget.draw(draw_context) catch unreachable;
+    self.hours_box.draw(draw_context);
     const hours_width = self.hours_box.getWidth();
 
     self.minutes_box.setText(&num2Char(@intCast(localtime.*.tm_min)));
-    self.minutes_box.widget.draw(draw_context) catch unreachable;
+    self.minutes_box.draw(draw_context);
     const minutes_width = self.minutes_box.getWidth();
 
     self.seconds_box.setText(&num2Char(@intCast(localtime.*.tm_sec)));
-    self.seconds_box.widget.draw(draw_context) catch unreachable;
+    self.seconds_box.draw(draw_context);
 
-    if (should_redraw) spacer_drawing: {
+    if (should_redraw) {
         const font_size = self.spacerFontSize();
 
-        const spacer_width: u31 = self.getSpacerWidth();
-
-        // if the padding is larger than the area, then there is nothing to draw.
-        const area_wo_padding = self.widget.area.removePadding(self.padding) orelse break :spacer_drawing;
+        const spacer_width: Size = self.getSpacerWidth();
 
         var draw_args = FreeTypeContext.DrawCharArgs{
             .draw_context = draw_context,
@@ -116,17 +122,17 @@ pub fn deinit(self: *Clock) void {
 }
 
 /// returns the used width in pixels
-pub fn getWidth(self: *Clock) u31 {
+pub fn getWidth(self: *Clock) Size {
     const hours_width = self.hours_box.getWidth();
     const minutes_width = self.minutes_box.getWidth();
     const seconds_width = self.seconds_box.getWidth();
 
-    const spacer_width: u31 = self.getSpacerWidth();
+    const spacer_width: Size = self.getSpacerWidth();
 
     return hours_width + spacer_width + minutes_width + spacer_width + seconds_width;
 }
 
-fn getSpacerWidth(self: *Clock) u31 {
+fn getSpacerWidth(self: *Clock) Size {
     const font_size = self.spacerFontSize();
     const glyph = freetype_context.loadChar(self.spacer_char, .{
         .font_size = font_size,
@@ -176,9 +182,9 @@ pub fn setArea(self: *Clock, area: Rect) void {
         .height = area.height,
     });
 
-    area.assertContains(self.hours_box.widget.area);
-    area.assertContains(self.minutes_box.widget.area);
-    area.assertContains(self.seconds_box.widget.area);
+    area.assertContains(self.hours_box.area);
+    area.assertContains(self.minutes_box.area);
+    area.assertContains(self.seconds_box.area);
 }
 
 pub const NewArgs = struct {
@@ -190,12 +196,12 @@ pub const NewArgs = struct {
 
     spacer_char: []const u8 = "",
 
-    padding: u16,
+    padding: Size,
 
-    padding_north: ?u16 = null,
-    padding_south: ?u16 = null,
-    padding_east: ?u16 = null,
-    padding_west: ?u16 = null,
+    padding_north: ?Size = null,
+    padding_south: ?Size = null,
+    padding_east: ?Size = null,
+    padding_west: ?Size = null,
 };
 
 pub fn newWidget(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
@@ -277,6 +283,7 @@ const Padding = drawing.Padding;
 const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
+const Size = drawing.Size;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;

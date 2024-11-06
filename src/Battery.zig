@@ -1,4 +1,4 @@
-//! A battery widget poll the battery and display it's charge.
+//! A battery widget poll the battery and display it is charging.
 //! TODO: Outline the charging_symbol once that is implemented.
 
 pub const Battery = @This();
@@ -68,7 +68,7 @@ fill_color: Color,
 
 /// How many pixels are filled on the progress bar
 /// Should always be smaller than or equal to the progress area's width.
-fill_pixels: u31,
+fill_pixels: Size,
 
 /// the total area of the progress bar
 progress_area: Rect,
@@ -84,21 +84,21 @@ full_file: std.fs.File,
 
 /// The font size of the battery symbol.
 /// Should always be up to date with the area.
-battery_font_size: u31,
+battery_font_size: Size,
 
 /// The width the battery takes up.
 /// Should always be up to date with the area.
-battery_width: u31,
+battery_width: Size,
 
 /// The font size of the charging symbol.
 /// Should always be up to date with the area.
-charging_font_size: u31,
+charging_font_size: Size,
 
 /// The padding area to not put anything in.
 padding: Padding,
 
 /// The padding between the battery and the progress_bar.
-inner_padding: u16,
+inner_padding: Size,
 inner_padding_was_specified: bool,
 
 /// The inner widget for dynamic dispatch and generic fields.
@@ -133,29 +133,20 @@ pub const NewArgs = struct {
 
     /// The padding between the battery and the progress_bar.
     /// If null, use default.
-    inner_padding: ?u16 = null,
+    inner_padding: ?Size = null,
 
     /// The general padding for each size.
-    padding: u16,
+    padding: Size,
 
     /// Overrides general padding the top side
-    padding_north: ?u16 = null,
+    padding_north: ?Size = null,
     /// Overrides general padding the bottom side
-    padding_south: ?u16 = null,
+    padding_south: ?Size = null,
     /// Overrides general padding the right side
-    padding_east: ?u16 = null,
+    padding_east: ?Size = null,
     /// Overrides general padding the left side
-    padding_west: ?u16 = null,
+    padding_west: ?Size = null,
 };
-
-/// Allocates the Battery and returns the inner Widget.
-pub fn newWidget(allocator: Allocator, args: NewArgs) !*Widget {
-    const battery = try allocator.create(Battery);
-
-    battery.* = try Battery.init(args);
-
-    return &battery.widget;
-}
 
 /// Initializes the widget with the given arguments.
 pub fn init(args: NewArgs) !Battery {
@@ -349,11 +340,13 @@ fn getBatteryState(self: *Battery, fill_ratio: u8) !BatteryState {
 /// Updates and draws what is needed
 /// TODO: handle read errors
 pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
+    defer self.widget.full_redraw = false;
+
     const area_after_padding = self.widget.area.removePadding(self.padding) orelse return;
 
-    var battery_capacity = try readFileInt(u31, self.full_file);
+    var battery_capacity = try readFileInt(u32, self.full_file);
     // if the charge is greater than capacity, saturate it.
-    const battery_charge = @min(try readFileInt(u31, self.charge_file), battery_capacity);
+    const battery_charge = @min(try readFileInt(u32, self.charge_file), battery_capacity);
 
     // avoid divide by zero.
     // Do it after the battery_charge so if capacity is zero, it will show the battery as empty
@@ -395,7 +388,7 @@ pub fn draw(self: *Battery, draw_context: *DrawContext) !void {
 
     self.widget.area.assertContains(progress_area);
 
-    const new_fill_pixels: u31 = @intCast(@as(u64, battery_charge) * progress_area.width / battery_capacity);
+    const new_fill_pixels: Size = @intCast(@as(u64, battery_charge) * progress_area.width / battery_capacity);
     assert(new_fill_pixels <= progress_area.width);
     defer self.fill_pixels = new_fill_pixels;
 
@@ -574,7 +567,7 @@ pub fn setArea(self: *Battery, area: Rect) void {
     }
 }
 
-fn chargingScaling(scale: u31) u31 {
+fn chargingScaling(scale: Size) Size {
     return scale * 8 / 10;
 }
 
@@ -605,7 +598,7 @@ pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
     const middle_row = bitmap[mid_height * bitmap_width ..][0..bitmap_width];
 
     // The inner left side of the glyph
-    const left_side: u31 = left_side: {
+    const left_side: Size = left_side: {
         const glyph_start = mem.indexOfScalar(u8, middle_row, alpha_max) orelse @panic("Invalid battery symbol");
 
         for (middle_row[glyph_start..], 0..) |alpha, idx| {
@@ -617,12 +610,12 @@ pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
     };
 
     // the inner right side of the glyph
-    const right_side: u31 = right_side: {
+    const right_side: Size = right_side: {
         const glyph_end = mem.lastIndexOfScalar(u8, middle_row, alpha_max) orelse @panic("Invalid battery symbol");
 
         var reverse_iter = mem.reverseIterator(middle_row[0..glyph_end]);
 
-        var idx: u31 = @intCast(glyph_end);
+        var idx: Size = @intCast(glyph_end);
         while (reverse_iter.next()) |alpha| : (idx -= 1) {
             if (alpha < alpha_max) {
                 break :right_side @intCast(idx);
@@ -632,9 +625,9 @@ pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
     };
 
     // the inner top size of the glyph
-    const top_side: u31 = top_side: {
+    const top_side: Size = top_side: {
         const glyph_start = glyph_start: {
-            var idx: u31 = 0;
+            var idx: Size = 0;
             while (idx < bitmap_height) : (idx += 1) {
                 if (bitmap[idx * bitmap_width + mid_width] == alpha_max)
                     break :glyph_start idx;
@@ -642,7 +635,7 @@ pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
             unreachable;
         };
 
-        var idx: u31 = glyph_start;
+        var idx: Size = glyph_start;
         while (idx < bitmap_height) : (idx += 1) {
             if (bitmap[idx * bitmap_width + mid_width] < alpha_max) {
                 break :top_side idx;
@@ -653,9 +646,9 @@ pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
     };
 
     // the inner bottom side of the glyph
-    const bottom_side: u31 = bottom_side: {
+    const bottom_side: Size = bottom_side: {
         const glyph_end = glyph_end: {
-            var idx: u31 = bitmap_height - 1;
+            var idx: Size = bitmap_height - 1;
             while (idx >= 0) : (idx -= 1) {
                 if (bitmap[idx * bitmap_width + mid_width] == alpha_max)
                     break :glyph_end idx;
@@ -663,7 +656,7 @@ pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
             unreachable;
         };
 
-        var idx: u31 = glyph_end;
+        var idx: Size = glyph_end;
         while (idx >= 0) : (idx -= 1) {
             if (bitmap[idx * bitmap_width + mid_width] < alpha_max) {
                 break :bottom_side idx + 1;
@@ -688,12 +681,12 @@ pub fn calculateProgressArea(self: *Battery, full_area: Rect) void {
 
     if (!self.inner_padding_was_specified) {
         // this padding looks pretty nice.
-        self.inner_padding = math.log2_int(u31, progress_area.height) -| 1;
+        self.inner_padding = math.log2_int(Size, progress_area.height) -| 1;
     }
 }
 
 /// returns the width the battery will take up.
-pub fn getWidth(self: *Battery) u31 {
+pub fn getWidth(self: *Battery) Size {
     return self.battery_width + self.padding.east + self.padding.west;
 }
 
@@ -714,6 +707,7 @@ const Padding = drawing.Padding;
 const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
+const Size = drawing.Size;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
@@ -726,7 +720,6 @@ const meta = std.meta;
 const ascii = std.ascii;
 const unicode = std.unicode;
 
-const Allocator = std.mem.Allocator;
 const BoundedArray = std.BoundedArray;
 
 const assert = std.debug.assert;

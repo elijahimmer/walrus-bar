@@ -77,6 +77,7 @@ pub fn build(b: *std.Build) void {
         "clock",
         "workspaces",
         "battery",
+        "brightness",
     }) |widget| {
         const disable_widget = b.option(bool, widget ++ "-disable", "Enable the " ++ widget ++ "                           (default: false)") orelse false;
         const debug_widget = b.option(bool, widget ++ "-debug", "Enable all the debugging options for " ++ widget ++ " (default: false)") orelse false;

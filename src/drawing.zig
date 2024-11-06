@@ -1,6 +1,9 @@
+pub const SizeSigned = i32;
+pub const Size = u16;
+
 pub const Point = struct {
-    x: u31,
-    y: u31,
+    x: Size,
+    y: Size,
 
     pub fn extendTo(self: Point, other: Point) Rect {
         const x_min, const x_max = .{ @min(self.x, other.x), @max(self.x, other.x) };
@@ -16,10 +19,10 @@ pub const Point = struct {
 };
 
 pub const Padding = struct {
-    north: u16,
-    south: u16,
-    east: u16,
-    west: u16,
+    north: Size,
+    south: Size,
+    east: Size,
+    west: Size,
 
     pub fn from(args: anytype) Padding {
         return .{
@@ -41,21 +44,10 @@ pub const Padding = struct {
 };
 
 pub const Rect = struct {
-    x: u31,
-    y: u31,
-    width: u31,
-    height: u31,
-
-    pub fn fill(self: Rect, draw_context: *const DrawContext, color: Color) void {
-        assert(draw_context.window_rect.width >= self.x + self.width);
-        assert(draw_context.window_rect.height >= self.y + self.height);
-
-        for (self.y..self.y + self.height) |y_coord| {
-            const row = draw_context.screen[y_coord * draw_context.window_width ..][0..draw_context.window_width];
-
-            @memset(row, color);
-        }
-    }
+    x: Size,
+    y: Size,
+    width: Size,
+    height: Size,
 
     pub fn contains(self: Rect, inner: Rect) bool {
         return (self.x <= inner.x) and
@@ -86,6 +78,12 @@ pub const Rect = struct {
         assert(self.y <= point.y);
         assert(self.x + self.width >= point.x);
         assert(self.y + self.height >= point.y);
+    }
+
+    pub fn assertContainsCircle(self: Rect, inner: Circle) void {
+        const circle_bb = inner.boundingBox();
+
+        self.assertContains(circle_bb);
     }
 
     /// returns the X and Y coordinates of the Rect
@@ -149,13 +147,13 @@ pub const Rect = struct {
         const new_x = switch (hori_align) {
             .start => self.x,
             .end => self.x + self.width - inner.x,
-            .center => @as(u31, @intCast(self.x + @divFloor(@as(i32, self.width) - inner.x, 2))),
+            .center => @as(Size, @intCast(self.x + @divFloor(@as(SizeSigned, self.width) - inner.x, 2))),
         };
 
         const new_y = switch (vert_align) {
             .start => self.y,
             .end => self.y + self.height - inner.y,
-            .center => @as(u31, @intCast(self.y + @divFloor(@as(i32, self.height) - inner.y, 2))),
+            .center => @as(Size, @intCast(self.y + @divFloor(@as(SizeSigned, self.height) - inner.y, 2))),
         };
 
         return .{
@@ -252,7 +250,7 @@ pub const Rect = struct {
         const window_width = draw_context.window_area.width;
 
         for (y_min..y_max) |y_coord| {
-            const screen_line = draw_context.screen[y_coord * window_width + x_min ..][0 .. x_max - x_min];
+            const screen_line = draw_context.screen[@as(usize, y_coord) * window_width + x_min ..][0 .. x_max - x_min];
 
             @memset(screen_line, color);
         }
@@ -282,13 +280,13 @@ pub const Rect = struct {
         assert(window_height >= y_max);
 
         for (y_min..y_max) |y_coord| {
-            draw_context.screen[y_coord * window_width + x_min] = color;
-            draw_context.screen[y_coord * window_width + x_max - 1] = color;
+            draw_context.screen[@as(usize, y_coord) * window_width + x_min] = color;
+            draw_context.screen[@as(usize, y_coord) * window_width + x_max - 1] = color;
         }
 
         for (x_min..x_max) |x_coord| {
-            draw_context.screen[y_min * window_width + x_coord] = color;
-            draw_context.screen[(y_max - 1) * window_width + x_coord] = color;
+            draw_context.screen[@as(usize, y_min) * window_width + x_coord] = color;
+            draw_context.screen[@as(usize, y_max - 1) * window_width + x_coord] = color;
         }
     }
 
@@ -306,7 +304,7 @@ pub const Rect = struct {
         const window_width = draw_context.window_area.width;
 
         draw_context.window_area.assertContainsPoint(.{ .x = x_coord, .y = y_coord });
-        draw_context.screen[y_coord * window_width + x_coord] = color;
+        draw_context.screen[@as(usize, y_coord) * window_width + x_coord] = color;
     }
 
     pub fn putComposite(
@@ -322,11 +320,173 @@ pub const Rect = struct {
 
         draw_context.current_area.assertContainsPoint(.{ .x = x_coord, .y = y_coord });
 
-        const base_color = draw_context.screen[y_coord * window_width + x_coord];
+        const base_color = draw_context.screen[@as(usize, y_coord) * window_width + x_coord];
 
         const new_color = base_color.composite(color);
 
-        draw_context.screen[y_coord * window_width + x_coord] = new_color;
+        draw_context.screen[@as(usize, y_coord) * window_width + x_coord] = new_color;
+    }
+};
+
+pub const Circle = struct {
+    r: Size,
+    x: Size,
+    y: Size,
+    odd_width: bool,
+
+    pub fn largestCircle(rect: Rect) Circle {
+        const diamiter = @min(rect.width, rect.height);
+
+        const radius = diamiter / 2;
+
+        const circle = Circle{
+            .r = radius,
+            .x = rect.x + radius,
+            .y = rect.y + radius,
+            .odd_width = diamiter % 2 > 0,
+        };
+
+        rect.assertContainsCircle(circle);
+
+        return circle;
+    }
+
+    pub fn boundingBox(self: Circle) Rect {
+        return .{
+            .x = self.x - self.r,
+            .y = self.y - self.r,
+            .width = self.r * 2 + @intFromBool(self.odd_width),
+            .height = self.r * 2 + @intFromBool(self.odd_width),
+        };
+    }
+
+    // TODO: Implement circle drawing
+
+    pub fn drawOutline(self: Circle, draw_context: *const DrawContext, color: Color) void {
+        var t1: Size = self.r / 16;
+        var x: Size = self.r;
+        var y: Size = 0;
+
+        while (x >= y) {
+            self.reflectPoint(draw_context, .{
+                .x = x,
+                .y = y,
+            }, color);
+
+            y += 1;
+            t1 += y;
+            if (t1 >= x) {
+                t1 -= x;
+                x -= 1;
+            }
+        }
+    }
+
+    fn reflectPoint(self: Circle, draw_context: *const DrawContext, point: Point, color: Color) void {
+        const bounding_box = self.boundingBox();
+        bounding_box.putPixel(draw_context, .{
+            .x = self.r + point.x,
+            .y = self.r + point.y,
+        }, color);
+        bounding_box.putPixel(draw_context, .{
+            .x = self.r - point.x,
+            .y = self.r + point.y,
+        }, color);
+        bounding_box.putPixel(draw_context, .{
+            .x = self.r - point.x,
+            .y = self.r - point.y,
+        }, color);
+        bounding_box.putPixel(draw_context, .{
+            .x = self.r + point.x,
+            .y = self.r - point.y,
+        }, color);
+        bounding_box.putPixel(draw_context, .{
+            .x = self.r + point.y,
+            .y = self.r + point.x,
+        }, color);
+        bounding_box.putPixel(draw_context, .{
+            .y = self.r - point.x,
+            .x = self.r + point.y,
+        }, color);
+        bounding_box.putPixel(draw_context, .{
+            .y = self.r - point.x,
+            .x = self.r - point.y,
+        }, color);
+        bounding_box.putPixel(draw_context, .{
+            .y = self.r + point.x,
+            .x = self.r - point.y,
+        }, color);
+    }
+
+    pub fn drawArea(self: Circle, draw_context: *const DrawContext, color: Color) void {
+        self.drawAreaWithin(draw_context, self.boundingBox(), color);
+    }
+
+    pub fn drawAreaWithin(self: Circle, draw_context: *const DrawContext, area: Rect, color: Color) void {
+        var t1: Size = self.r / 16;
+        var x: Size = self.r;
+        var y: Size = 0;
+
+        while (x >= y) {
+            self.reflectPointFillIn(draw_context, area, .{
+                .x = x,
+                .y = y,
+            }, color);
+
+            y += 1;
+            t1 += y;
+            if (t1 >= x) {
+                t1 -= x;
+                x -= 1;
+            }
+        }
+    }
+
+    pub fn reflectPointFillIn(self: Circle, draw_context: *const DrawContext, area: Rect, point: Point, color: Color) void {
+        const bounding_box = self.boundingBox();
+
+        const top_rect = Rect{
+            .x = self.x - point.x,
+            .y = self.y - point.y,
+            .width = point.x * 2 + @intFromBool(self.odd_width),
+            .height = 1,
+        };
+        const middle_top_rect = Rect{
+            .x = self.x - point.y,
+            .y = self.y - point.x,
+            .width = point.y * 2 + @intFromBool(self.odd_width),
+            .height = 1,
+        };
+        // move the lower ones up to avoid a weird off by 1 error when it is a even width.
+        const middle_bottom_rect = Rect{
+            .x = self.x - point.x,
+            .y = self.y + point.y - @intFromBool(!self.odd_width),
+            .width = point.x * 2 + @intFromBool(self.odd_width),
+            .height = 1,
+        };
+        const bottom_rect = Rect{
+            .x = self.x - point.y,
+            .y = self.y + point.x - @intFromBool(!self.odd_width),
+            .width = point.y * 2 + @intFromBool(self.odd_width),
+            .height = 1,
+        };
+
+        inline for (.{
+            top_rect,
+            middle_top_rect,
+            middle_bottom_rect,
+            bottom_rect,
+        }) |rect| {
+            if (rect.intersection(area)) |to_draw| {
+                bounding_box.assertContains(to_draw);
+                to_draw.drawArea(draw_context, color);
+            }
+        }
+    }
+
+    pub fn damageArea(self: Circle, draw_context: *const DrawContext) void {
+        // TODO: Make some accurate damage box.
+        draw_context.damageArea(self.boundingBox());
     }
 };
 
@@ -422,6 +582,11 @@ pub const Widget = struct {
     }
 
     pub fn generateVTable(Outer: type) *const VTable {
+        comptime {
+            assert(meta.hasMethod(Outer, "setArea"));
+            assert(meta.hasMethod(Outer, "getWidth"));
+        }
+
         const S = struct {
             pub fn draw(widget: *Widget, draw_context: *DrawContext) anyerror!void {
                 const self: *Outer = @fieldParentPtr("widget", widget);
@@ -432,14 +597,7 @@ pub const Widget = struct {
             pub fn deinit(widget: *Widget, allocator: Allocator) void {
                 const self: *Outer = @fieldParentPtr("widget", widget);
 
-                if (@typeInfo(self.deinit).Fn.Params.len > 0) {
-                    assert(@typeInfo(self.deinit).Fn.Params.len > 0);
-                    assert(@typeInfo(self.deinit).Fn.Params[0].type == Allocator);
-
-                    self.deinit(allocator);
-                } else {
-                    self.deinit(allocator);
-                }
+                self.deinit();
 
                 allocator.destroy(self);
                 self.* = undefined;
