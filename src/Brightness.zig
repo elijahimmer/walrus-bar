@@ -1,4 +1,5 @@
 //! A Brightness widget poll the screen and display the brightness.
+//! TODO: Add scrolling to set brightness.
 
 pub const Brightness = @This();
 
@@ -9,6 +10,7 @@ const brightness_transform = Transform.identity;
 
 /// The default brightness directory, public for Config.zig to use
 pub const default_brightness_directory = "/sys/class/backlight/intel_backlight";
+pub const default_brightness_scoll_ticks: u32 = 100;
 
 /// The file name of the full file.
 const max_brightness_file_name = "max_brightness";
@@ -46,6 +48,9 @@ brightness_font_size: Size,
 /// Should always be up to date with the area.
 brightness_width: Size,
 
+/// the number of total scroll ticks to get from 0% to 100% brightness
+scroll_ticks: u32,
+
 /// The padding area to not put anything in.
 padding: Padding,
 
@@ -69,6 +74,9 @@ pub const NewArgs = struct {
 
     /// The directory to look up all the brightness files in.
     brightness_directory: []const u8,
+
+    /// the number of total scroll ticks to get from 0% to 100% brightness
+    scroll_ticks: u32,
 
     /// The padding between the brightness and the progress_bar.
     /// If null, use default.
@@ -120,7 +128,7 @@ pub fn init(args: NewArgs) !Brightness {
     brightness_path.len -= @intCast(max_brightness_file_name.len);
     brightness_path.appendSliceAssumeCapacity(current_brightness_file_name);
 
-    const current_file = std.fs.openFileAbsolute(brightness_path.slice(), .{}) catch |err| {
+    const current_file = std.fs.openFileAbsolute(brightness_path.slice(), .{ .mode = .read_write }) catch |err| {
         log.warn("Failed to open Current Brightness File with: {s}", .{@errorName(err)});
         return error.CurrentFileError;
     };
@@ -147,6 +155,8 @@ pub fn init(args: NewArgs) !Brightness {
         .inner_padding = args.inner_padding orelse undefined,
         .inner_padding_was_specified = args.inner_padding != null,
 
+        .scroll_ticks = args.scroll_ticks,
+
         .widget = .{
             .vtable = Widget.generateVTable(Brightness),
 
@@ -169,11 +179,18 @@ pub fn init(args: NewArgs) !Brightness {
 
 /// Reads a file that only contains an int.
 fn readFileInt(comptime T: type, file: std.fs.File) !T {
-    assert(@typeInfo(T) == .Int);
-    assert(@typeInfo(T).Int.signedness == .unsigned);
+    const type_info = @typeInfo(T);
+    assert(type_info == .Int);
+
+    const int_bits = type_info.Int.bits - @intFromBool(type_info.Int.signedness == .signed);
+
+    const UnsignedType = @Type(.{ .Int = .{
+        .bits = int_bits,
+        .signedness = .unsigned,
+    } });
 
     // get total possible number of digits the number could be, plus 1 for overflow saturation
-    const digits = comptime math.log(T, 10, maxInt(T)) + 1;
+    const digits = comptime math.log(UnsignedType, 10, (1 << int_bits) - 1) + 1;
 
     // set the files back so we can re-read the changes.
     try file.seekTo(0);
@@ -184,7 +201,7 @@ fn readFileInt(comptime T: type, file: std.fs.File) !T {
 
     if (str.len == 0) return error.EmptyFile;
 
-    return parseUnsigned(T, str, 10) catch |err| switch (err) {
+    return parseInt(T, str, 10) catch |err| switch (err) {
         // if the number is too big, saturate it.
         error.Overflow => maxInt(T),
         error.InvalidCharacter => error.InvalidCharacter,
@@ -491,6 +508,53 @@ pub fn getWidth(self: *Brightness) Size {
     return self.brightness_width + self.padding.east + self.padding.west;
 }
 
+pub fn scroll(self: *const Brightness, axis: Axis, discrete: i32) void {
+    if (axis != .vertical_scroll) return;
+
+    var brightness_max = readFileInt(u32, self.max_file) catch |err| {
+        log.warn("Failed to set brightness. Could not get max brightness with error: {s}", .{@errorName(err)});
+        return;
+    };
+    const raw_brightness_current = readFileInt(u32, self.current_file) catch |err| {
+        log.warn("Failed to set brightness. Could not get current brightness with error: {s}", .{@errorName(err)});
+        return;
+    };
+    const brightness_current = @min(raw_brightness_current, brightness_max);
+
+    brightness_max = @max(brightness_max, 1);
+
+    const scroll_delta: i32 = @intCast(brightness_max / self.scroll_ticks);
+
+    const raw_new_brightness = @as(i32, @intCast(brightness_current)) -| (discrete * scroll_delta);
+    const new_brightness: u32 = @min(@as(u32, @intCast(@max(0, raw_new_brightness))), brightness_max);
+
+    const digits = comptime math.log(u32, 10, maxInt(u32)) + 1;
+
+    var digit_numbers: [digits]u8 = undefined;
+
+    const bytes = std.fmt.formatIntBuf(&digit_numbers, new_brightness, 10, .lower, .{});
+
+    self.current_file.seekTo(0) catch |err| {
+        log.warn("Failed to seek to file start with error: {s}", .{@errorName(err)});
+        return;
+    };
+
+    const written_bytes = self.current_file.write(digit_numbers[0..bytes]) catch |err| {
+        log.warn("Failed to set brightness. Failed to write to brightness file with error: {s}", .{@errorName(err)});
+        return;
+    };
+
+    self.current_file.setEndPos(written_bytes) catch |err| {
+        log.warn("Failed to set file end pos, brightness data is likely wrong. error: {s}", .{@errorName(err)});
+        return;
+    };
+
+    if (written_bytes != bytes) {
+        log.warn("Failed to write entire number to brightness file.", .{});
+        return;
+    }
+}
+
 test {
     std.testing.refAllDecls(@This());
 }
@@ -511,6 +575,9 @@ const Point = drawing.Point;
 const Rect = drawing.Rect;
 const Size = drawing.Size;
 
+const seat_utils = @import("seat_utils.zig");
+const Axis = seat_utils.Axis;
+
 const colors = @import("colors.zig");
 const Color = colors.Color;
 
@@ -526,6 +593,6 @@ const BoundedArray = std.BoundedArray;
 
 const assert = std.debug.assert;
 const maxInt = std.math.maxInt;
-const parseUnsigned = std.fmt.parseUnsigned;
+const parseInt = std.fmt.parseInt;
 
 const log = std.log.scoped(.Brightness);

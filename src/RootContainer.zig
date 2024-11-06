@@ -47,6 +47,19 @@ pub fn draw(self: *RootContainer, draw_context: *DrawContext) !void {
     }
 }
 
+pub fn scroll(self: *RootContainer, axis: Axis, discrete: i32) void {
+    assert(self.last_motion != null);
+    self.area.assertContainsPoint(self.last_motion.?);
+
+    inline for (.{ "workspaces", "clock", "battery", "brightness" }) |widget_name| {
+        if (@TypeOf(@field(self, widget_name)) == void) continue;
+        if (@field(self, widget_name)) |*widget| {
+            const area = widget.widget.area;
+            if (area.containsPoint(self.last_motion.?)) widget.widget.scroll(axis, discrete);
+        }
+    }
+}
+
 pub fn motion(self: *RootContainer, point: Point) void {
     self.area.assertContainsPoint(point);
     if (self.last_motion) |lm| self.area.assertContainsPoint(lm);
@@ -217,6 +230,8 @@ pub fn init(area: Rect) RootContainer {
 
             .brightness_directory = config.brightness_directory,
 
+            .scroll_ticks = config.scroll_ticks,
+
             .padding = 0, //@as(u16, @intCast(area.height / 10)),
 
             .area = .{
@@ -269,6 +284,7 @@ const Size = drawing.Size;
 
 const seat_utils = @import("seat_utils.zig");
 const MouseButton = seat_utils.MouseButton;
+const Axis = seat_utils.Axis;
 
 const std = @import("std");
 

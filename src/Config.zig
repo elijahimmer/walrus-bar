@@ -32,7 +32,9 @@ text_color: Color,
 background_color: Color,
 
 battery_directory: if (!options.battery_disable) []const u8 else void,
+
 brightness_directory: if (!options.brightness_disable) []const u8 else void,
+scroll_ticks: if (!options.brightness_disable) u32 else void,
 
 font_size: u16,
 
@@ -97,7 +99,9 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .font_size = args.@"font-size" orelse 20,
 
         .battery_directory = if (!options.battery_disable) args.@"battery-directory" orelse default_battery_directory else {},
+
         .brightness_directory = if (!options.brightness_disable) args.@"brightness-directory" orelse default_brightness_directory else {},
+        .scroll_ticks = if (!options.brightness_disable) args.@"brightness-scroll-ticks" orelse default_brightness_scoll_ticks else {},
 
         .title = args.title orelse std.mem.span(std.os.argv[0]),
     };
@@ -120,8 +124,9 @@ else
     "") ++ (if (!options.brightness_disable)
     std.fmt.comptimePrint(
         \\    --brightness-directory <PATH> The absolute path to the brightness directory (default: "{s}")
+        \\    --brightness-scroll-ticks <INT> The number of scroll ticks to get from (default: {})
         \\
-    , .{default_brightness_directory})
+    , .{ default_brightness_directory, default_brightness_scoll_ticks })
 else
     "") ++ std.fmt.comptimePrint(
     \\
@@ -222,6 +227,7 @@ const default_battery_directory = Battery.default_battery_directory;
 
 const Brightness = @import("Brightness.zig");
 const default_brightness_directory = Brightness.default_brightness_directory;
+const default_brightness_scoll_ticks = Brightness.default_brightness_scoll_ticks;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;

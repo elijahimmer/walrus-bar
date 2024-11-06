@@ -526,6 +526,7 @@ pub const Widget = struct {
         motion: ?*const fn (*Widget, Point) void,
         leave: ?*const fn (*Widget) void,
         click: ?*const fn (*Widget, Point, MouseButton) void,
+        scroll: ?*const fn (*Widget, Axis, i32) void,
     };
     vtable: *const VTable,
 
@@ -575,6 +576,10 @@ pub const Widget = struct {
 
     pub inline fn click(self: *Widget, point: Point, button: MouseButton) void {
         if (self.vtable.click) |click_fn| click_fn(self, point, button);
+    }
+
+    pub inline fn scroll(self: *Widget, axis: Axis, discrete: i32) void {
+        if (self.vtable.scroll) |scroll_fn| scroll_fn(self, axis, discrete);
     }
 
     pub fn getParent(self: *Widget, T: type) *T {
@@ -627,6 +632,12 @@ pub const Widget = struct {
                 self.click(point, button);
             }
 
+            pub fn scroll(widget: *Widget, axis: Axis, discrete: i32) void {
+                const self: *Outer = @fieldParentPtr("widget", widget);
+
+                self.scroll(axis, discrete);
+            }
+
             pub fn leave(widget: *Widget) void {
                 const self: *Outer = @fieldParentPtr("widget", widget);
 
@@ -642,6 +653,7 @@ pub const Widget = struct {
                 .motion = if (@hasDecl(Outer, "motion")) @This().motion else null,
                 .leave = if (@hasDecl(Outer, "leave")) @This().leave else null,
                 .click = if (@hasDecl(Outer, "click")) @This().click else null,
+                .scroll = if (@hasDecl(Outer, "scroll")) @This().scroll else null,
             };
         };
 
@@ -653,6 +665,7 @@ pub const Align = enum { start, center, end };
 
 const seat_utils = @import("seat_utils.zig");
 const MouseButton = seat_utils.MouseButton;
+const Axis = seat_utils.Axis;
 
 const DrawContext = @import("DrawContext.zig");
 const freetype_context = &@import("FreeTypeContext.zig").global;

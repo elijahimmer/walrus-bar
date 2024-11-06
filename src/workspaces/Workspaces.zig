@@ -263,6 +263,8 @@ pub fn click(self: *const Workspaces, point: Point, button: MouseButton) void {
 
     if (self.pointToWorkspaceIndex(point)) |wksp_idx| {
         const wksp = self.workspaces.get(wksp_idx);
+        if (wksp.id == self.active_workspace) return;
+
         WorkspaceState.setWorkspace(wksp.id) catch |err| {
             log.warn("Failed to set workspace with: {s}", .{@errorName(err)});
         };

@@ -32,6 +32,8 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
         }
     }.checker;
 
+    //log.debug("get event: {s}", .{@tagName(event)});
+
     switch (event) {
         .enter => |enter| {
             if (enter.surface) |surface| {
@@ -109,10 +111,22 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 },
             }
         },
+        .axis_discrete => |axis_discrete| {
+            if (axis_discrete.discrete == 0) return;
+
+            if (wayland_context.last_motion_surface) |draw_context| {
+                assert(draw_context.root_container != null);
+                draw_context.root_container.?.scroll(axis_discrete.axis, axis_discrete.discrete);
+            } else {
+                log_local.warn("Scroll event but not on a surface?", .{});
+            }
+        },
         // TODO: Implement input frames.
-        .axis, .frame, .axis_source, .axis_stop, .axis_discrete, .axis_value120, .axis_relative_direction => {},
+        .axis, .frame, .axis_source, .axis_stop, .axis_value120, .axis_relative_direction => {},
     }
 }
+
+pub const Axis = wl.Pointer.Axis;
 
 pub const MouseButton = enum(u16) {
     left_click = 272,
