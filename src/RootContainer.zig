@@ -185,27 +185,11 @@ pub fn init(area: Rect) RootContainer {
 
     if (!options.battery_disable) battery: {
         var battery = Battery.init(.{
-            .background_color = config.battery_background_color,
-
-            .critical_animation_speed = config.battery_critical_animation_speed,
-
-            .discharging_color = config.battery_discharging_color,
-            .charging_color = config.battery_charging_color,
-            .critical_color = config.battery_critical_color,
-            .warning_color = config.battery_warning_color,
-            .full_color = config.battery_full_color,
-
-            .battery_directory = config.battery_directory,
-
-            .padding = @as(u16, @intCast(area.height / 8)),
-
-            .area = .{
-                .x = area.width - 1000,
-                .y = 0,
-                .width = 1000,
-                .height = area.height,
-            },
-        }) catch |err| {
+            .x = area.width - 1000,
+            .y = 0,
+            .width = 1000,
+            .height = area.height,
+        }, config.battery_config) catch |err| {
             log.warn("Failed to initalized Battery with: {s}", .{@errorName(err)});
             break :battery;
         };

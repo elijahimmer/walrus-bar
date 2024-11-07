@@ -5,6 +5,10 @@ pub const Config = @This();
 pub const default_text_color = "rose";
 pub const default_background_color = "surface";
 
+pub const Path = struct {
+    path: []const u8,
+};
+
 /// global config. Use only after you have initialized it with init
 pub var global: Config = undefined;
 
@@ -45,24 +49,13 @@ workspaces_active_background_color: if (!options.workspaces_disable) Color else 
 
 workspaces_spacing: if (!options.workspaces_disable) Size else void,
 
-battery_directory: if (!options.battery_disable) []const u8 else void,
-
-battery_background_color: if (!options.battery_disable) Color else void,
-battery_critical_animation_speed: if (!options.battery_disable) u8 else void,
-
-battery_full_color: if (!options.battery_disable) Color else void,
-battery_charging_color: if (!options.battery_disable) Color else void,
-battery_discharging_color: if (!options.battery_disable) Color else void,
-battery_warning_color: if (!options.battery_disable) Color else void,
-battery_critical_color: if (!options.battery_disable) Color else void,
+battery_config: BatteryConfig,
 
 brightness_directory: if (!options.brightness_disable) []const u8 else void,
 brightness_color: if (!options.brightness_disable) Color else void,
 brightness_background_color: if (!options.brightness_disable) Color else void,
 
 scroll_ticks: if (!options.brightness_disable) u8 else void,
-
-font_size: u16,
 
 fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     var iter = std.process.ArgIterator.init();
@@ -123,9 +116,9 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .width = args.width,
         .height = args.height orelse 28,
 
-        .font_size = args.@"font-size" orelse 20,
-
         .background_color = background_color,
+
+        .battery_config = createConfig(BatteryConfig, args),
 
         .clock_text_color = if (!options.clock_disable) args.@"clock-text-color" orelse text_color else {},
         .clock_spacer_color = if (!options.clock_disable) args.@"clock-spacer-color" orelse colors.pine else {},
@@ -134,27 +127,16 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .workspaces_text_color = if (!options.workspaces_disable) args.@"workspaces-text-color" orelse text_color else {},
         .workspaces_background_color = if (!options.workspaces_disable) args.@"workspaces-background-color" orelse background_color else {},
 
-        .workspaces_hover_text_color = if (!options.workspaces_disable) args.@"workspaces-hover-text-color" orelse colors.gold else {},
-        .workspaces_hover_background_color = if (!options.workspaces_disable) args.@"workspaces-hover-background-color" orelse colors.hl_med else {},
+        .workspaces_hover_text_color = if (!options.workspaces_disable) args.@"workspaces-hover-text-color" orelse @field(colors, default_workspaces_hover_text_color) else {},
+        .workspaces_hover_background_color = if (!options.workspaces_disable) args.@"workspaces-hover-background-color" orelse @field(colors, default_workspaces_hover_background_color) else {},
 
-        .workspaces_active_text_color = if (!options.workspaces_disable) args.@"workspaces-active-text-color" orelse colors.gold else {},
-        .workspaces_active_background_color = if (!options.workspaces_disable) args.@"workspaces-active-background-color" orelse colors.pine else {},
+        .workspaces_active_text_color = if (!options.workspaces_disable) args.@"workspaces-active-text-color" orelse @field(colors, default_workspaces_active_text_color) else {},
+        .workspaces_active_background_color = if (!options.workspaces_disable) args.@"workspaces-active-background-color" orelse @field(colors, default_workspaces_active_background_color) else {},
 
         .workspaces_spacing = if (!options.workspaces_disable) args.@"workspaces-spacing" orelse 0 else {},
 
-        .battery_directory = if (!options.battery_disable) args.@"battery-directory" orelse default_battery_directory else {},
-
-        .battery_background_color = if (!options.battery_disable) args.@"battery-background-color" orelse background_color else {},
-        .battery_critical_animation_speed = if (!options.battery_disable) args.@"battery-critical-animation-speed" orelse 8 else {},
-
-        .battery_full_color = if (!options.battery_disable) args.@"battery-full-color" orelse colors.gold else {},
-        .battery_charging_color = if (!options.battery_disable) args.@"battery-charging-color" orelse colors.iris else {},
-        .battery_discharging_color = if (!options.battery_disable) args.@"battery-discharging-color" orelse colors.pine else {},
-        .battery_warning_color = if (!options.battery_disable) args.@"battery-warning-color" orelse colors.rose else {},
-        .battery_critical_color = if (!options.battery_disable) args.@"battery-critical-color" orelse colors.love else {},
-
         .brightness_directory = if (!options.brightness_disable) args.@"brightness-directory" orelse default_brightness_directory else {},
-        .brightness_color = if (!options.brightness_disable) args.@"brightness-color" orelse colors.rose else {},
+        .brightness_color = if (!options.brightness_disable) args.@"brightness-color" orelse @field(colors, default_brightness_color) else {},
         .brightness_background_color = if (!options.brightness_disable) args.@"brightness-background-color" orelse background_color else {},
 
         .scroll_ticks = if (!options.brightness_disable) args.@"brightness-scroll-ticks" orelse default_brightness_scoll_ticks else {},
@@ -163,59 +145,162 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     };
 }
 
+fn getArgName(comptime T: type, name: []const u8) []const u8 {
+    const type_name = type_name: {
+        const type_name = @typeName(T);
+        const ends_with_config = ascii.endsWithIgnoreCase(type_name, "config");
+
+        const single_name = if (mem.lastIndexOfScalar(u8, type_name, '.')) |idx|
+            type_name[idx + 1 ..]
+        else
+            type_name;
+
+        break :type_name single_name[0 .. single_name.len - @intFromBool(ends_with_config) * "config".len];
+    };
+
+    const arg_name_init = type_name ++ "_" ++ name;
+    var arg_name: [arg_name_init.len]u8 = undefined;
+
+    _ = ascii.lowerString(&arg_name, arg_name_init);
+
+    mem.replaceScalar(u8, &arg_name, '_', '-');
+    return &arg_name;
+}
+
+/// Gets all the config options from the clap config
+pub fn createConfig(comptime T: type, args: anytype) T {
+    @setEvalBranchQuota(10_000);
+    assert(@typeInfo(T) == .Struct);
+    const type_info = @typeInfo(T).Struct;
+
+    var out: T = .{};
+
+    inline for (type_info.fields) |field| {
+        const arg_name = comptime getArgName(T, field.name);
+
+        const arg_type = @TypeOf(@field(out, field.name));
+
+        if (@field(args, arg_name)) |value| {
+            @field(out, field.name) = switch (arg_type) {
+                Path => .{ .path = value },
+                else => value,
+            };
+        }
+    }
+
+    return out;
+}
+
+pub fn resolveTypeName(comptime T: type) []const u8 {
+    const tt = if (@typeInfo(T) == .Optional) @typeInfo(T).Optional.child else T;
+
+    return switch (tt) {
+        Path => "Path",
+        []const u8 => "String",
+        Size => "Size",
+        Color => "Color",
+        else => @typeName(T),
+    };
+}
+
+/// Turns a configuration struct into a help message.
+pub fn generateHelpMessageComptime(comptime T: type) [helpMessageLen(T)]u8 {
+    @setEvalBranchQuota(10_000);
+    assert(@typeInfo(T) == .Struct);
+    const type_info = @typeInfo(T).Struct;
+
+    var message = std.BoundedArray(u8, helpMessageLen(T)){};
+
+    const writer = message.writer();
+
+    for (type_info.fields) |field| {
+        if (!@hasDecl(T, field.name ++ "_comment"))
+            @compileError("Struct " ++ @typeName(T) ++ "'s Field '" ++ field.name ++ "' doesn't have a comment field: " ++ field.name ++ "_comment");
+
+        const arg_name = getArgName(T, field.name);
+
+        const type_name = resolveTypeName(field.type);
+
+        const comment = @field(T, field.name ++ "_comment");
+
+        writer.print("--{s} <{s}> {s}\n", .{
+            arg_name,
+            type_name,
+            comment,
+        }) catch unreachable;
+    }
+
+    return message.buffer;
+}
+
+pub fn helpMessageLen(T: type) comptime_int {
+    @setEvalBranchQuota(10_000);
+    assert(@typeInfo(T) == .Struct);
+    const type_info = @typeInfo(T).Struct;
+
+    var len = 0;
+
+    for (type_info.fields) |field| {
+        if (!@hasDecl(T, field.name ++ "_comment"))
+            @compileError("Struct " ++ @typeName(T) ++ "'s Field '" ++ field.name ++ "' doesn't have a comment field: " ++ field.name ++ "_comment");
+
+        const arg_name = getArgName(T, field.name);
+
+        const type_name = resolveTypeName(field.type);
+
+        const comment = @field(T, field.name ++ "_comment");
+
+        len += "--".len;
+        len += arg_name.len;
+        len += " <".len;
+        len += type_name.len;
+        len += "> ".len;
+        len += comment.len;
+        len += "\n".len;
+    }
+    return len;
+}
+
 const help =
     \\-h, --help                     Display this help and exit.
     \\    --dependencies             Print a list of the dependencies and versions and exit.
     \\    --colors                   Print a list of all the named colors and exit.
-    \\-w, --width <U16>              The window's width (full screen if not specified)
-    \\-l, --height <U16>             The window's height (minimum: 15) (default: 28)
-    \\-t, --title <STR>              The window's title (default: OS Process Name [likely 'walrus-bar'])
+    \\-w, --width <Size>              The window's width (full screen if not specified)
+    \\-l, --height <Size>             The window's height (minimum: 15) (default: 28)
+    \\-t, --title <String>              The window's title (default: OS Process Name [likely 'walrus-bar'])
     \\
 ++ std.fmt.comptimePrint(
-    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: {s})
-    \\-b, --background-color <COLOR> The background color by name or by hex code (starting with '#') (default: {s})
-    \\-f, --font-size <U16>          The font size in points (default: 20)
+    \\-T, --text-color <Color>       The text color by name or by hex code (starting with '#') (default: {s})
+    \\-b, --background-color <Color> The background color by name or by hex code (starting with '#') (default: {s})
     \\
-, .{ default_text_color, default_background_color }) ++ (if (!options.battery_disable)
+, .{ default_text_color, default_background_color }) ++ (if (!options.battery_disable) generateHelpMessageComptime(BatteryConfig) else "") ++ (if (!options.brightness_disable)
     std.fmt.comptimePrint(
-        \\    --battery-directory <PATH>               The absolute path to the battery directory (default: "{s}")
-        \\    --battery-critical-animation-speed <U8>  The speed of the animation (default: 8)
-        \\
-        \\    --battery-background-color <COLOR>       The background color of the battery (default: background-color)
-        \\
-        \\    --battery-full-color <COLOR>             The color of the battery when it is full (default: GOLD)
-        \\    --battery-charging-color <COLOR>         The color of the battery when it is charging (default: IRIS)
-        \\    --battery-discharging-color <COLOR>      The color of the battery when it is discharging (default: PINE)
-        \\    --battery-warning-color <COLOR>          The color of the battery when it is low (default: ROSE)
-        \\    --battery-critical-color <COLOR>         The color of the battery when it is critically low (default: LOVE)
-        \\
-    , .{default_battery_directory})
-else
-    "") ++ (if (!options.brightness_disable)
-    std.fmt.comptimePrint(
-        \\    --brightness-directory <PATH>         The absolute path to the brightness directory (default: "{s}")
-        \\    --brightness-scroll-ticks <U8>        The number of scroll ticks to get from (default: {})
-        \\
-        \\    --brightness-color <COLOR>            The color of the brightness icon (default: ROSE)
-        \\    --brightness-background-color <COLOR> The background color of the brightness (default: background-color)
         \\
     , .{ default_brightness_directory, default_brightness_scoll_ticks })
 else
     "") ++ (if (!options.clock_disable)
-    \\    --clock-text-color <COLOR>       The text color of the clock's numbers (default: text-color)
-    \\    --clock-spacer-color <COLOR>     The text color of the clock's spacers (default: PINE)
-    \\    --clock-background-color <COLOR> The background color of the clock (default: background-color)
+    \\    --clock-text-color <Color>       The text color of the clock's numbers (default: text-color)
+    \\    --clock-spacer-color <Color>     The text color of the clock's spacers (default: PINE)
+    \\    --clock-background-color <Color> The background color of the clock (default: background-color)
     \\
 else
     "") ++ (if (!options.workspaces_disable)
-    \\    --workspaces-text-color <COLOR>               The text color of the workspaces (default: text-color)
-    \\    --workspaces-background-color <COLOR>         The background color of the workspaces (default: background-color)
-    \\    --workspaces-hover-text-color <COLOR>         The text color of the workspaces when hovered (default: GOLD)
-    \\    --workspaces-hover-background-color <COLOR>   The background color of the workspaces when hovered (default: HL_MED)
-    \\    --workspaces-active-text-color <COLOR>        The text color of the workspaces when active (default: GOLD)
-    \\    --workspaces-active-background-color <COLOR>  The background color of the workspaces when active (default: PINE)
-    \\    --workspaces-spacing <U16>                    The space (in pixels) between two workspaces (default: 0)
-    \\
+    std.fmt.comptimePrint(
+        \\    --workspaces-text-color <Color>               The text color of the workspaces (default: text-color)
+        \\    --workspaces-background-color <Color>         The background color of the workspaces (default: background-color)
+        \\    --workspaces-hover-text-color <Color>         The text color of the workspaces when hovered (default: {s})
+        \\    --workspaces-hover-background-color <Color>   The background color of the workspaces when hovered (default: {s})
+        \\    --workspaces-active-text-color <Color>        The text color of the workspaces when active (default: {s})
+        \\    --workspaces-active-background-color <Color>  The background color of the workspaces when active (default: {s})
+        \\    --workspaces-spacing <Size>                    The space (in pixels) between two workspaces (default: {})
+        \\
+    , .{
+        default_workspaces_hover_text_color,
+        default_workspaces_hover_background_color,
+        default_workspaces_active_text_color,
+        default_workspaces_active_background_color,
+        default_workspaces_spacing,
+    })
 else
     "");
 
@@ -284,11 +369,11 @@ pub fn printColorsMessage(writer: anytype) !void {
 const params = clap.parseParamsComptime(help);
 
 const parsers = .{
-    .PATH = pathParser,
-    .STR = clap.parsers.string,
-    .U16 = clap.parsers.int(u16, 0),
-    .U8 = clap.parsers.int(u8, 0),
-    .COLOR = colors.str2Color,
+    .Path = pathParser,
+    .String = clap.parsers.string,
+    .Size = clap.parsers.int(Size, 0),
+    .u8 = clap.parsers.int(u8, 0),
+    .Color = colors.str2Color,
 };
 
 const PathParserError = error{
@@ -306,11 +391,19 @@ fn pathParser(path: []const u8) PathParserError![]const u8 {
 const options = @import("options");
 
 const Battery = @import("Battery.zig");
-const default_battery_directory = Battery.default_battery_directory;
+const BatteryConfig = Battery.BatteryConfig;
 
 const Brightness = @import("Brightness.zig");
 const default_brightness_directory = Brightness.default_brightness_directory;
 const default_brightness_scoll_ticks = Brightness.default_brightness_scoll_ticks;
+const default_brightness_color = Brightness.default_brightness_color;
+
+const Workspaces = @import("workspaces/Workspaces.zig");
+const default_workspaces_hover_text_color = Workspaces.default_workspaces_hover_text_color;
+const default_workspaces_hover_background_color = Workspaces.default_workspaces_hover_background_color;
+const default_workspaces_active_text_color = Workspaces.default_workspaces_active_text_color;
+const default_workspaces_active_background_color = Workspaces.default_workspaces_active_background_color;
+const default_workspaces_spacing = Workspaces.default_workspaces_spacing;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
@@ -323,11 +416,13 @@ const Size = drawing.Size;
 
 const builtin = @import("builtin");
 const std = @import("std");
+const ascii = std.ascii;
+const mem = std.mem;
+const fs = std.fs;
 
 const assert = std.debug.assert;
 const print = std.debug.print;
 const exit = std.process.exit;
-const fs = std.fs;
 
 const Allocator = std.mem.Allocator;
 

@@ -16,48 +16,63 @@ const charging_transform = Transform.right;
 ///     so the charging glyph shows through,
 const charging_progress_area_alpha: u8 = 200;
 
-/// The default battery directory, public for Config.zig to use
-pub const default_battery_directory = "/sys/class/power_supply/BAT0";
-
-/// The file name of the full file.
-const full_file_name = "energy_full";
-
-/// the file name of the charge file.
-const charge_file_name = "energy_now";
-
-/// The file name of the status file.
-const status_file_name = "status";
-
-/// The max length between all the file names.
-const max_file_name = @max(full_file_name.len, charge_file_name.len, status_file_name.len);
-
-/// The maximum length a battery status message can be.
+// The maximum length a battery status message can be.
 const max_status_length = 64;
 
-/// The background color.
-background_color: Color,
+pub const BatteryConfig = struct {
+    pub const directory_comment = "The directory the battery is in.";
 
-/// The color to display when the battery is full.
-full_color: Color,
+    pub const full_file_name_comment = "The file name of the full file.";
+    pub const charge_file_name_comment = "The file name of the charge file.";
+    pub const status_file_name_comment = "The file name of the status file.";
 
-/// The color to display when the battery is charging.
-charging_color: Color,
+    pub const background_color_comment = "The background color for the battery.";
 
-/// The color to display when the battery is discharging.
-/// So anytime it is not plugged in and at a modest to high charge.
-discharging_color: Color,
+    pub const full_color_comment = "The color to display when the battery is full.";
+    pub const charging_color_comment = "The color to display when the battery is charging.";
+    pub const discharging_color_comment =
+        \\ The color to display when the battery is discharging.
+        \\ So anytime it is not plugged in and at a modest to high charge.
+    ;
+    pub const warning_color_comment = "The color to display when the battery is low.";
+    pub const critical_color_comment = "The color to display when the battery is critically low.";
 
-/// The color to display when the battery is critically low.
-critical_color: Color,
+    pub const critical_animation_speed_comment = "The speed of the critical animation";
 
-/// The critical blink animation tracker.
-critical_animation_percentage: u8 = 0,
+    pub const padding_comment = "The general padding for each size.";
 
-/// The speed of the critical animation
-critical_animation_speed: u8,
+    pub const padding_north_comment = "Overrides general padding the top side";
+    pub const padding_south_comment = "Overrides general padding the bottom side";
+    pub const padding_east_comment = "Overrides general padding the right side";
+    pub const padding_west_comment = "Overrides general padding the left side";
 
-/// The color to display when the battery is low.
-warning_color: Color,
+    pub const inner_padding_comment = "The padding between the battery and the progress_bar.";
+
+    directory: Config.Path = .{ .path = "/sys/class/power_supply/BAT0" },
+
+    full_file_name: []const u8 = "energy_full",
+    charge_file_name: []const u8 = "energy_now",
+    status_file_name: []const u8 = "status",
+
+    background_color: Color = colors.surface,
+
+    full_color: Color = colors.gold,
+    charging_color: Color = colors.iris,
+    discharging_color: Color = colors.pine,
+    warning_color: Color = colors.rose,
+    critical_color: Color = colors.love,
+
+    critical_animation_speed: u8 = 8,
+
+    padding: ?Size = null,
+
+    padding_north: ?Size = null,
+    padding_south: ?Size = null,
+    padding_east: ?Size = null,
+    padding_west: ?Size = null,
+
+    inner_padding: ?Size = null,
+};
 
 /// The last drawn battery state.
 current_state: BatteryState,
@@ -104,60 +119,26 @@ inner_padding_was_specified: bool,
 /// The inner widget for dynamic dispatch and generic fields.
 widget: Widget,
 
-/// The arguments to build a new Battery
-pub const NewArgs = struct {
-    /// The area to contain the battery.
-    area: Rect,
+background_color: Color,
+full_color: Color,
+charging_color: Color,
+discharging_color: Color,
+warning_color: Color,
+critical_color: Color,
 
-    /// The background color of the battery.
-    background_color: Color,
-
-    /// The color to display when the battery is full.
-    full_color: Color,
-
-    /// The color to display when the battery is charging.
-    charging_color: Color,
-
-    /// The color to display when the battery is discharging.
-    /// So anytime it is not plugged in and at a modest to high charge.
-    discharging_color: Color,
-
-    /// The color to display when the battery is critically low.
-    critical_color: Color,
-
-    /// The color to display when the battery is low.
-    warning_color: Color,
-
-    /// The speed of the critical animation
-    critical_animation_speed: u8,
-
-    /// The directory to look up all the battery files in.
-    battery_directory: []const u8,
-
-    /// The padding between the battery and the progress_bar.
-    /// If null, use default.
-    inner_padding: ?Size = null,
-
-    /// The general padding for each size.
-    padding: Size,
-
-    /// Overrides general padding the top side
-    padding_north: ?Size = null,
-    /// Overrides general padding the bottom side
-    padding_south: ?Size = null,
-    /// Overrides general padding the right side
-    padding_east: ?Size = null,
-    /// Overrides general padding the left side
-    padding_west: ?Size = null,
-};
+critical_animation_percentage: u8,
+critical_animation_speed: u8,
 
 /// Initializes the widget with the given arguments.
-pub fn init(args: NewArgs) !Battery {
-    assert(args.battery_directory.len > 0);
+pub fn init(area: Rect, config: BatteryConfig) !Battery {
+    const directory = config.directory.path;
+    assert(directory.len > 0);
 
-    const battery_directory_should_add_sep = args.battery_directory[args.battery_directory.len - 1] != fs.path.sep;
+    const directory_should_add_sep = directory[directory.len - 1] != fs.path.sep;
 
-    const path_length = args.battery_directory.len + @intFromBool(battery_directory_should_add_sep) + max_file_name;
+    const max_file_name = @max(config.full_file_name.len, config.charge_file_name.len, config.status_file_name.len);
+
+    const path_length = directory.len + @intFromBool(directory_should_add_sep) + max_file_name;
 
     if (path_length > std.fs.max_path_bytes) {
         log.err("provided battery directory makes path too long to be a valid path.", .{});
@@ -168,11 +149,11 @@ pub fn init(args: NewArgs) !Battery {
     var battery_path = BoundedArray(u8, std.fs.max_path_bytes){};
 
     // base directory path
-    battery_path.appendSliceAssumeCapacity(args.battery_directory);
-    if (battery_directory_should_add_sep) battery_path.appendAssumeCapacity(fs.path.sep);
+    battery_path.appendSliceAssumeCapacity(directory);
+    if (directory_should_add_sep) battery_path.appendAssumeCapacity(fs.path.sep);
 
     // the full file's name
-    battery_path.appendSliceAssumeCapacity(full_file_name);
+    battery_path.appendSliceAssumeCapacity(config.full_file_name);
 
     const full_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Battery Full File with: {s}", .{@errorName(err)});
@@ -181,8 +162,8 @@ pub fn init(args: NewArgs) !Battery {
     errdefer full_file.close();
 
     // remove the full file's name, add the charge file's
-    battery_path.len -= @intCast(full_file_name.len);
-    battery_path.appendSliceAssumeCapacity(charge_file_name);
+    battery_path.len -= @intCast(config.full_file_name.len);
+    battery_path.appendSliceAssumeCapacity(config.charge_file_name);
 
     const charge_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Battery Charge File with: {s}", .{@errorName(err)});
@@ -191,8 +172,8 @@ pub fn init(args: NewArgs) !Battery {
     errdefer full_file.close();
 
     // remove the charge file, add status file.
-    battery_path.len -= @intCast(charge_file_name.len);
-    battery_path.appendSliceAssumeCapacity(status_file_name);
+    battery_path.len -= @intCast(config.charge_file_name.len);
+    battery_path.appendSliceAssumeCapacity(config.status_file_name);
 
     const status_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Battery Status File with: {s}", .{@errorName(err)});
@@ -200,17 +181,21 @@ pub fn init(args: NewArgs) !Battery {
     };
     errdefer full_file.close();
 
+    const padding = config.padding orelse area.height / 8;
+
     // undefined fields because they will set before used on draw or the immediate setArea.
     var self = Battery{
-        .background_color = args.background_color,
+        .background_color = config.background_color,
 
-        .critical_animation_speed = args.critical_animation_speed,
+        // start at zero so animation starts at the beginning.
+        .critical_animation_percentage = 0,
+        .critical_animation_speed = config.critical_animation_speed,
 
-        .discharging_color = args.discharging_color,
-        .charging_color = args.charging_color,
-        .critical_color = args.critical_color,
-        .warning_color = args.warning_color,
-        .full_color = args.full_color,
+        .discharging_color = config.discharging_color,
+        .charging_color = config.charging_color,
+        .critical_color = config.critical_color,
+        .warning_color = config.warning_color,
+        .full_color = config.full_color,
 
         .current_state = .discharging,
         // undefined because it will be set with `setArea()` right after,
@@ -228,10 +213,15 @@ pub fn init(args: NewArgs) !Battery {
         .charge_file = charge_file,
         .full_file = full_file,
 
-        .padding = Padding.from(args),
+        .padding = .{
+            .north = config.padding_north orelse padding,
+            .south = config.padding_south orelse padding,
+            .east = config.padding_east orelse padding,
+            .west = config.padding_west orelse padding,
+        },
         // if no inner padding was specified, it will be overridden before used.
-        .inner_padding = args.inner_padding orelse undefined,
-        .inner_padding_was_specified = args.inner_padding != null,
+        .inner_padding = config.inner_padding orelse undefined,
+        .inner_padding_was_specified = config.inner_padding != null,
 
         .widget = .{
             .vtable = Widget.generateVTable(Battery),
@@ -248,7 +238,7 @@ pub fn init(args: NewArgs) !Battery {
     };
 
     // set the area to find the progress area and everything.
-    self.setArea(args.area);
+    self.setArea(area);
 
     return self;
 }
@@ -716,6 +706,8 @@ const Size = drawing.Size;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
+
+const Config = @import("Config.zig");
 
 const std = @import("std");
 const fs = std.fs;

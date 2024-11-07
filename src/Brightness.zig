@@ -11,8 +11,8 @@ const brightness_transform = Transform.identity;
 /// The default brightness directory, public for Config.zig to use
 pub const default_brightness_directory = "/sys/class/backlight/intel_backlight";
 pub const default_brightness_scoll_ticks: u32 = 100;
+pub const default_brightness_color = "rose";
 
-/// The file name of the full file.
 const max_brightness_file_name = "max_brightness";
 
 /// the file name of the charge file.
@@ -20,6 +20,43 @@ const current_brightness_file_name = "brightness";
 
 /// The max length between all the file names.
 const max_file_name = @max(max_brightness_file_name.len, current_brightness_file_name.len);
+
+pub const BrightnessConfig = struct {
+    pub const directory_comment = "The directory the battery is in.";
+
+    pub const max_brightness_file_name_comment = "The file name of the max brightness file.";
+    pub const brightness_file_name_comment = "The file name of the current brightness file.";
+
+    pub const background_color_comment = "The background color.";
+
+    pub const padding_comment = "The general padding for each size.";
+
+    pub const padding_north_comment = "Overrides general padding the top side";
+    pub const padding_south_comment = "Overrides general padding the bottom side";
+    pub const padding_east_comment = "Overrides general padding the right side";
+    pub const padding_west_comment = "Overrides general padding the left side";
+
+    pub const inner_padding_comment = "The padding between the battery and the progress_bar.";
+
+    directory: Config.Path = .{ .path = "/sys/class/power_supply/BAT0" },
+
+    max_brightness_file_name: []const u8 = "max_brightness",
+    brightness_file_name: []const u8 = "brightness",
+
+    scroll_ticks: u8 = 100,
+
+    color: Color = colors.rose,
+    background_color: Color = colors.surface,
+
+    padding: ?Size = null,
+
+    padding_north: ?Size = null,
+    padding_south: ?Size = null,
+    padding_east: ?Size = null,
+    padding_west: ?Size = null,
+
+    inner_padding: ?Size = null,
+};
 
 /// The background color.
 background_color: Color,
@@ -61,42 +98,8 @@ inner_padding_was_specified: bool,
 /// The inner widget for dynamic dispatch and generic fields.
 widget: Widget,
 
-/// The arguments to build a new brightness
-pub const NewArgs = struct {
-    /// The area to contain the brightness.
-    area: Rect,
-
-    /// The background color.
-    background_color: Color,
-
-    /// The color of the icon.
-    brightness_color: Color,
-
-    /// The directory to look up all the brightness files in.
-    brightness_directory: []const u8,
-
-    /// the number of total scroll ticks to get from 0% to 100% brightness
-    scroll_ticks: u8,
-
-    /// The padding between the brightness and the progress_bar.
-    /// If null, use default.
-    inner_padding: ?Size = null,
-
-    /// The general padding for each size.
-    padding: Size,
-
-    /// Overrides general padding the top side
-    padding_north: ?Size = null,
-    /// Overrides general padding the bottom side
-    padding_south: ?Size = null,
-    /// Overrides general padding the right side
-    padding_east: ?Size = null,
-    /// Overrides general padding the left side
-    padding_west: ?Size = null,
-};
-
 /// Initializes the widget with the given arguments.
-pub fn init(args: NewArgs) !Brightness {
+pub fn init(area: Rect, config: Config) !Brightness {
     assert(args.brightness_directory.len > 0);
 
     const brightness_directory_should_add_sep = args.brightness_directory[args.brightness_directory.len - 1] != fs.path.sep;
@@ -580,6 +583,8 @@ const Axis = seat_utils.Axis;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
+
+const Config = @import("Config.zig");
 
 const std = @import("std");
 const fs = std.fs;

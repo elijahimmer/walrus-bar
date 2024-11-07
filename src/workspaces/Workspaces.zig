@@ -18,6 +18,12 @@ pub const WorkspacesArray = BoundedArray(Workspace, max_workspace_count);
 /// unicode iteration and decoding to get a symbol.
 pub const WorkspaceSymbolArray = BoundedArray(u21, max_workspace_count);
 
+pub const default_workspaces_hover_text_color = "gold";
+pub const default_workspaces_hover_background_color = "hl_med";
+pub const default_workspaces_active_text_color = "gold";
+pub const default_workspaces_active_background_color = "pine";
+pub const default_workspaces_spacing = 0;
+
 /// The global workspace state, given by the workspaces worker.
 const workspace_state = &WorkspaceState.global;
 

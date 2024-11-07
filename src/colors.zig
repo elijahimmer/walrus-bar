@@ -58,13 +58,11 @@ pub const Color = packed struct(u32) {
 
         for (COLOR_LIST) |color| {
             const compos = composite(color.color, all_colors.main);
-            std.log.warn("expected: {}, created: {}", .{ all_colors.main, compos });
             try expect(meta.eql(all_colors.main, compos));
         }
 
         for (COLOR_LIST) |color| {
             const compos_clear = composite(color.color, all_colors.clear);
-            std.log.warn("expected: {}, created: {}", .{ color.color, compos_clear });
             try expect(meta.eql(color.color, compos_clear));
         }
     }
