@@ -226,7 +226,7 @@ pub fn init(area: Rect) RootContainer {
         var brightness = Brightness.init(.{
             .background_color = config.background_color,
 
-            .brightness_color = colors.iris,
+            .brightness_color = colors.rose,
 
             .brightness_directory = config.brightness_directory,
 
