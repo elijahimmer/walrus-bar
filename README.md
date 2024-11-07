@@ -45,7 +45,7 @@ I recommend compiling with `--release=safe`, but you can also do `--release=fast
 to optimize for speed and binary size respectively.
 
 ## Performance
-As of 0.1.2, the slowest part of this is the overhead of the Wayland connections,
+As of 0.1.3, the slowest part of this is the overhead of the Wayland connections,
 but multiple outputs and HI-DPI outputs have yet to be thoroughly tested.
 
 Normally this idles 0.0% CPU usage, and ~4 Mib of memory (much of which is the font).
