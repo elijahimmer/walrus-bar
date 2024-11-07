@@ -26,12 +26,12 @@ pub fn deinit(self: *RootContainer) void {
 pub fn setArea(self: RootContainer, area: Rect) void {
     _ = self;
     _ = area;
-    @compileError("unimplemented");
+    @panic("unimplemented");
 }
 
 pub fn getWidth(self: RootContainer) Size {
     _ = self;
-    @compileError("unimplemented");
+    @panic("unimplemented");
 }
 
 pub fn draw(self: *RootContainer, draw_context: *DrawContext) !void {

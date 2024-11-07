@@ -29,29 +29,47 @@ pub const Color = packed struct(u32) {
     //    };
     //}
 
+    // TODO: Make sure this is correct.
     pub fn composite(bg: Color, fg: Color) Color {
+        if (fg.a == maxInt(u8)) return fg;
+
         const ratio: u16 = fg.a;
         assert(ratio <= maxInt(u8));
         const ratio_old: u16 = @as(u16, maxInt(u8)) - ratio;
 
+        assert(ratio + ratio_old == maxInt(u8));
+
+        // if over 1/2 of the remaining color is there after the 8 bit truncation for one,
+        // but not both the foreground and background.
+        const add_one_r = (fg.r * ratio & (1 << 7)) ^ (bg.r * (ratio_old + 1) & (1 << 7)) > 0;
+        const add_one_g = (fg.g * ratio & (1 << 7)) ^ (bg.g * (ratio_old + 1) & (1 << 7)) > 0;
+        const add_one_b = (fg.b * ratio & (1 << 7)) ^ (bg.b * (ratio_old + 1) & (1 << 7)) > 0;
+
         return .{
             .a = fg.a +| bg.a,
-            .r = @intCast((fg.r * ratio >> 8) + (bg.r * ratio_old >> 8) + @intFromBool(fg.r * ratio % (1 << 8) >= (1 << 7))),
-            .g = @intCast((fg.g * ratio >> 8) + (bg.g * ratio_old >> 8) + @intFromBool(fg.g * ratio % (1 << 8) >= (1 << 7))),
-            .b = @intCast((fg.b * ratio >> 8) + (bg.b * ratio_old >> 8) + @intFromBool(fg.b * ratio % (1 << 8) >= (1 << 7))),
+            .r = @intCast((fg.r * ratio / maxInt(u8)) + (bg.r * ratio_old / maxInt(u8)) + @intFromBool(add_one_r)),
+            .g = @intCast((fg.g * ratio / maxInt(u8)) + (bg.g * ratio_old / maxInt(u8)) + @intFromBool(add_one_g)),
+            .b = @intCast((fg.b * ratio / maxInt(u8)) + (bg.b * ratio_old / maxInt(u8)) + @intFromBool(add_one_b)),
         };
     }
 
     test composite {
         const expect = std.testing.expect;
 
-        const compos = @as(u32, @bitCast(composite(all_colors.black, all_colors.main)));
-        try expect(@as(u32, @bitCast(all_colors.main)) == compos);
+        for (COLOR_LIST) |color| {
+            const compos = composite(color.color, all_colors.main);
+            std.log.warn("expected: {}, created: {}", .{ all_colors.main, compos });
+            try expect(meta.eql(all_colors.main, compos));
+        }
 
-        const compos_clear = @as(u32, @bitCast(composite(all_colors.black, all_colors.clear)));
-        try expect(@as(u32, @bitCast(all_colors.black)) == compos_clear);
+        for (COLOR_LIST) |color| {
+            const compos_clear = composite(color.color, all_colors.clear);
+            std.log.warn("expected: {}, created: {}", .{ color.color, compos_clear });
+            try expect(meta.eql(color.color, compos_clear));
+        }
     }
 
+    // Simply blends the two colors together by multiplying them by the `fg`'s alpha/255
     pub fn blend(a: Color, b: Color, ratio: u8) Color {
         return a.composite(b.withAlpha(ratio));
     }
@@ -192,8 +210,6 @@ test str2Color {
     try expectEqual(0xFF112233, @as(u32, @bitCast(try str2Color("#123"))));
 }
 
-// Simply blends the two colors together by multiplying them by the `fg`'s alpha/255
-
 pub const all_colors = struct {
     // TODO: Add more colors here.
     pub const clear: Color = @bitCast(@as(u32, 0));
@@ -260,6 +276,7 @@ const wl = wayland.client.wl;
 
 const std = @import("std");
 const ascii = std.ascii;
+const meta = std.meta;
 
 const maxInt = std.math.maxInt;
 const assert = std.debug.assert;
