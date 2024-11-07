@@ -111,18 +111,19 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 },
             }
         },
-        .axis_discrete => |axis_discrete| {
-            if (axis_discrete.discrete == 0) return;
+        .axis => |axis| {
+            //log.debug("axis: {}", .{axis});
+            if (axis.value.toInt() == 0) return;
 
             if (wayland_context.last_motion_surface) |draw_context| {
                 assert(draw_context.root_container != null);
-                draw_context.root_container.?.scroll(axis_discrete.axis, axis_discrete.discrete);
+                draw_context.root_container.?.scroll(axis.axis, axis.value.toInt());
             } else {
                 log_local.warn("Scroll event but not on a surface?", .{});
             }
         },
         // TODO: Implement input frames.
-        .axis, .frame, .axis_source, .axis_stop, .axis_value120, .axis_relative_direction => {},
+        .frame, .axis_stop, .axis_value120, .axis_discrete, .axis_relative_direction, .axis_source => {},
     }
 }
 
