@@ -35,10 +35,10 @@ fill_pixels: Size,
 progress_area: Rect,
 
 /// File for the max brightness
-max_file: std.fs.File,
+max_file: fs.File,
 
 /// File for the current brightness
-current_file: std.fs.File,
+current_file: fs.File,
 
 /// The font size of the brightness symbol.
 /// Should always be up to date with the area.
@@ -49,7 +49,7 @@ brightness_font_size: Size,
 brightness_width: Size,
 
 /// the number of total scroll ticks to get from 0% to 100% brightness
-scroll_ticks: u32,
+scroll_ticks: u8,
 
 /// The padding area to not put anything in.
 padding: Padding,
@@ -76,7 +76,7 @@ pub const NewArgs = struct {
     brightness_directory: []const u8,
 
     /// the number of total scroll ticks to get from 0% to 100% brightness
-    scroll_ticks: u32,
+    scroll_ticks: u8,
 
     /// The padding between the brightness and the progress_bar.
     /// If null, use default.
@@ -103,13 +103,13 @@ pub fn init(args: NewArgs) !Brightness {
 
     const path_length = args.brightness_directory.len + @intFromBool(brightness_directory_should_add_sep) + max_file_name;
 
-    if (path_length > std.fs.max_path_bytes) {
+    if (path_length > fs.max_path_bytes) {
         log.err("provided brightness directory makes path too long to be a valid path.", .{});
         // crash or not to crash, that is the question...
         return error.PathTooLong;
     }
 
-    var brightness_path = BoundedArray(u8, std.fs.max_path_bytes){};
+    var brightness_path = BoundedArray(u8, fs.max_path_bytes){};
 
     // base directory path
     brightness_path.appendSliceAssumeCapacity(args.brightness_directory);
@@ -118,7 +118,7 @@ pub fn init(args: NewArgs) !Brightness {
     // the full file's name
     brightness_path.appendSliceAssumeCapacity(max_brightness_file_name);
 
-    const max_file = std.fs.openFileAbsolute(brightness_path.slice(), .{}) catch |err| {
+    const max_file = fs.openFileAbsolute(brightness_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Max Brightness File with: {s}", .{@errorName(err)});
         return error.MaxFileError;
     };
@@ -128,7 +128,7 @@ pub fn init(args: NewArgs) !Brightness {
     brightness_path.len -= @intCast(max_brightness_file_name.len);
     brightness_path.appendSliceAssumeCapacity(current_brightness_file_name);
 
-    const current_file = std.fs.openFileAbsolute(brightness_path.slice(), .{ .mode = .read_write }) catch |err| {
+    const current_file = fs.openFileAbsolute(brightness_path.slice(), .{ .mode = .read_write }) catch |err| {
         log.warn("Failed to open Current Brightness File with: {s}", .{@errorName(err)});
         return error.CurrentFileError;
     };
@@ -178,7 +178,7 @@ pub fn init(args: NewArgs) !Brightness {
 }
 
 /// Reads a file that only contains an int.
-fn readFileInt(comptime T: type, file: std.fs.File) !T {
+fn readFileInt(comptime T: type, file: fs.File) !T {
     const type_info = @typeInfo(T);
     assert(type_info == .Int);
 

@@ -15,9 +15,6 @@ const charging_transform = Transform.right;
 /// The alpha for the progress area when it is charging,
 ///     so the charging glyph shows through,
 const charging_progress_area_alpha: u8 = 200;
-/// How quickly the critical animation will go.
-/// 8 is pretty quick.
-const critical_animation_speed: u4 = 8;
 
 /// The default battery directory, public for Config.zig to use
 pub const default_battery_directory = "/sys/class/power_supply/BAT0";
@@ -55,6 +52,9 @@ critical_color: Color,
 
 /// The critical blink animation tracker.
 critical_animation_percentage: u8 = 0,
+
+/// The speed of the critical animation
+critical_animation_speed: u8,
 
 /// The color to display when the battery is low.
 warning_color: Color,
@@ -128,6 +128,9 @@ pub const NewArgs = struct {
     /// The color to display when the battery is low.
     warning_color: Color,
 
+    /// The speed of the critical animation
+    critical_animation_speed: u8,
+
     /// The directory to look up all the battery files in.
     battery_directory: []const u8,
 
@@ -200,6 +203,8 @@ pub fn init(args: NewArgs) !Battery {
     // undefined fields because they will set before used on draw or the immediate setArea.
     var self = Battery{
         .background_color = args.background_color,
+
+        .critical_animation_speed = args.critical_animation_speed,
 
         .discharging_color = args.discharging_color,
         .charging_color = args.charging_color,
@@ -296,7 +301,7 @@ fn stateToColor(self: *Battery, state: BatteryState) Color {
         .warning => self.warning_color,
         .critical => critical: {
             // advance the critical animation
-            self.critical_animation_percentage +%= critical_animation_speed;
+            self.critical_animation_percentage +%= self.critical_animation_speed;
             break :critical self.critical_color.blend(self.warning_color, self.critical_animation_percentage);
         },
     };

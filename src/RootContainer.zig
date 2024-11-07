@@ -125,10 +125,10 @@ pub fn init(area: Rect) RootContainer {
 
     if (!options.clock_disable) {
         var clock = Clock.init(.{
-            .text_color = config.text_color,
-            .background_color = config.background_color,
+            .text_color = config.clock_text_color,
+            .background_color = config.clock_background_color,
 
-            .spacer_color = colors.pine,
+            .spacer_color = config.clock_spacer_color,
 
             .padding = 0,
             .padding_north = @intCast(area.height / 6),
@@ -152,16 +152,16 @@ pub fn init(area: Rect) RootContainer {
 
     if (!options.workspaces_disable) workspaces: {
         var workspaces = Workspaces.init(.{
-            .text_color = config.text_color,
-            .background_color = config.background_color,
+            .text_color = config.workspaces_text_color,
+            .background_color = config.workspaces_background_color,
 
-            .hover_workspace_background = colors.hl_med,
-            .hover_workspace_text = colors.gold,
+            .hover_workspace_background = config.workspaces_hover_background_color,
+            .hover_workspace_text = config.workspaces_hover_text_color,
 
-            .active_workspace_background = colors.pine,
-            .active_workspace_text = colors.gold,
+            .active_workspace_background = config.workspaces_active_background_color,
+            .active_workspace_text = config.workspaces_active_text_color,
 
-            .workspace_spacing = 0,
+            .workspace_spacing = config.workspaces_spacing,
             .padding = 0,
 
             .area = .{
@@ -185,13 +185,15 @@ pub fn init(area: Rect) RootContainer {
 
     if (!options.battery_disable) battery: {
         var battery = Battery.init(.{
-            .background_color = config.background_color,
+            .background_color = config.battery_background_color,
 
-            .discharging_color = colors.pine,
-            .charging_color = colors.iris,
-            .critical_color = colors.love,
-            .warning_color = colors.rose,
-            .full_color = colors.gold,
+            .critical_animation_speed = config.battery_critical_animation_speed,
+
+            .discharging_color = config.battery_discharging_color,
+            .charging_color = config.battery_charging_color,
+            .critical_color = config.battery_critical_color,
+            .warning_color = config.battery_warning_color,
+            .full_color = config.battery_full_color,
 
             .battery_directory = config.battery_directory,
 
@@ -224,9 +226,8 @@ pub fn init(area: Rect) RootContainer {
         const x_pos = if (has_battery and root_container.battery != null) root_container.battery.?.widget.area.x - 1000 else root_container.area.width - 1000;
 
         var brightness = Brightness.init(.{
-            .background_color = config.background_color,
-
-            .brightness_color = colors.rose,
+            .background_color = config.brightness_background_color,
+            .brightness_color = config.brightness_color,
 
             .brightness_directory = config.brightness_directory,
 

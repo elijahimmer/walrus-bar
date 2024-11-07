@@ -1,4 +1,4 @@
-//! TODO: Implement widget specific color options.
+//! TODO: Implement configuration files
 
 pub const Config = @This();
 
@@ -28,13 +28,39 @@ height: u16,
 
 title: []const u8,
 
-text_color: Color,
 background_color: Color,
+
+clock_text_color: if (!options.clock_disable) Color else void,
+clock_spacer_color: if (!options.clock_disable) Color else void,
+clock_background_color: if (!options.clock_disable) Color else void,
+
+workspaces_text_color: if (!options.workspaces_disable) Color else void,
+workspaces_background_color: if (!options.workspaces_disable) Color else void,
+
+workspaces_hover_text_color: if (!options.workspaces_disable) Color else void,
+workspaces_hover_background_color: if (!options.workspaces_disable) Color else void,
+
+workspaces_active_text_color: if (!options.workspaces_disable) Color else void,
+workspaces_active_background_color: if (!options.workspaces_disable) Color else void,
+
+workspaces_spacing: if (!options.workspaces_disable) Size else void,
 
 battery_directory: if (!options.battery_disable) []const u8 else void,
 
+battery_background_color: if (!options.battery_disable) Color else void,
+battery_critical_animation_speed: if (!options.battery_disable) u8 else void,
+
+battery_full_color: if (!options.battery_disable) Color else void,
+battery_charging_color: if (!options.battery_disable) Color else void,
+battery_discharging_color: if (!options.battery_disable) Color else void,
+battery_warning_color: if (!options.battery_disable) Color else void,
+battery_critical_color: if (!options.battery_disable) Color else void,
+
 brightness_directory: if (!options.brightness_disable) []const u8 else void,
-scroll_ticks: if (!options.brightness_disable) u32 else void,
+brightness_color: if (!options.brightness_disable) Color else void,
+brightness_background_color: if (!options.brightness_disable) Color else void,
+
+scroll_ticks: if (!options.brightness_disable) u8 else void,
 
 font_size: u16,
 
@@ -87,6 +113,9 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         exit(1);
     }
 
+    const text_color = args.@"text-color" orelse @field(colors, default_text_color);
+    const background_color = args.@"background-color" orelse @field(colors, default_background_color);
+
     return Config{
         .clap_res = res,
         .program_name = program_name,
@@ -94,13 +123,40 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .width = args.width,
         .height = args.height orelse 28,
 
-        .text_color = args.@"text-color" orelse @field(colors, default_text_color),
-        .background_color = args.@"background-color" orelse @field(colors, default_background_color),
         .font_size = args.@"font-size" orelse 20,
+
+        .background_color = background_color,
+
+        .clock_text_color = if (!options.clock_disable) args.@"clock-text-color" orelse text_color else {},
+        .clock_spacer_color = if (!options.clock_disable) args.@"clock-spacer-color" orelse colors.pine else {},
+        .clock_background_color = if (!options.clock_disable) args.@"clock-background-color" orelse background_color else {},
+
+        .workspaces_text_color = if (!options.workspaces_disable) args.@"workspaces-text-color" orelse text_color else {},
+        .workspaces_background_color = if (!options.workspaces_disable) args.@"workspaces-background-color" orelse background_color else {},
+
+        .workspaces_hover_text_color = if (!options.workspaces_disable) args.@"workspaces-hover-text-color" orelse colors.gold else {},
+        .workspaces_hover_background_color = if (!options.workspaces_disable) args.@"workspaces-hover-background-color" orelse colors.hl_med else {},
+
+        .workspaces_active_text_color = if (!options.workspaces_disable) args.@"workspaces-active-text-color" orelse colors.gold else {},
+        .workspaces_active_background_color = if (!options.workspaces_disable) args.@"workspaces-active-background-color" orelse colors.pine else {},
+
+        .workspaces_spacing = if (!options.workspaces_disable) args.@"workspaces-spacing" orelse 0 else {},
 
         .battery_directory = if (!options.battery_disable) args.@"battery-directory" orelse default_battery_directory else {},
 
+        .battery_background_color = if (!options.battery_disable) args.@"battery-background-color" orelse background_color else {},
+        .battery_critical_animation_speed = if (!options.battery_disable) args.@"battery-critical-animation-speed" orelse 8 else {},
+
+        .battery_full_color = if (!options.battery_disable) args.@"battery-full-color" orelse colors.gold else {},
+        .battery_charging_color = if (!options.battery_disable) args.@"battery-charging-color" orelse colors.iris else {},
+        .battery_discharging_color = if (!options.battery_disable) args.@"battery-discharging-color" orelse colors.pine else {},
+        .battery_warning_color = if (!options.battery_disable) args.@"battery-warning-color" orelse colors.rose else {},
+        .battery_critical_color = if (!options.battery_disable) args.@"battery-critical-color" orelse colors.love else {},
+
         .brightness_directory = if (!options.brightness_disable) args.@"brightness-directory" orelse default_brightness_directory else {},
+        .brightness_color = if (!options.brightness_disable) args.@"brightness-color" orelse colors.rose else {},
+        .brightness_background_color = if (!options.brightness_disable) args.@"brightness-background-color" orelse background_color else {},
+
         .scroll_ticks = if (!options.brightness_disable) args.@"brightness-scroll-ticks" orelse default_brightness_scoll_ticks else {},
 
         .title = args.title orelse std.mem.span(std.os.argv[0]),
@@ -111,32 +167,57 @@ const help =
     \\-h, --help                     Display this help and exit.
     \\    --dependencies             Print a list of the dependencies and versions and exit.
     \\    --colors                   Print a list of all the named colors and exit.
-    \\-w, --width <INT>              The window's width (full screen if not specified)
-    \\-l, --height <INT>             The window's height (minimum: 15) (default: 28)
+    \\-w, --width <U16>              The window's width (full screen if not specified)
+    \\-l, --height <U16>             The window's height (minimum: 15) (default: 28)
     \\-t, --title <STR>              The window's title (default: OS Process Name [likely 'walrus-bar'])
     \\
-++ (if (!options.battery_disable)
+++ std.fmt.comptimePrint(
+    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: {s})
+    \\-b, --background-color <COLOR> The background color by name or by hex code (starting with '#') (default: {s})
+    \\-f, --font-size <U16>          The font size in points (default: 20)
+    \\
+, .{ default_text_color, default_background_color }) ++ (if (!options.battery_disable)
     std.fmt.comptimePrint(
-        \\    --battery-directory <PATH> The absolute path to the battery directory (default: "{s}")
+        \\    --battery-directory <PATH>               The absolute path to the battery directory (default: "{s}")
+        \\    --battery-critical-animation-speed <U8>  The speed of the animation (default: 8)
+        \\
+        \\    --battery-background-color <COLOR>       The background color of the battery (default: background-color)
+        \\
+        \\    --battery-full-color <COLOR>             The color of the battery when it is full (default: GOLD)
+        \\    --battery-charging-color <COLOR>         The color of the battery when it is charging (default: IRIS)
+        \\    --battery-discharging-color <COLOR>      The color of the battery when it is discharging (default: PINE)
+        \\    --battery-warning-color <COLOR>          The color of the battery when it is low (default: ROSE)
+        \\    --battery-critical-color <COLOR>         The color of the battery when it is critically low (default: LOVE)
         \\
     , .{default_battery_directory})
 else
     "") ++ (if (!options.brightness_disable)
     std.fmt.comptimePrint(
-        \\    --brightness-directory <PATH> The absolute path to the brightness directory (default: "{s}")
-        \\    --brightness-scroll-ticks <INT> The number of scroll ticks to get from (default: {})
+        \\    --brightness-directory <PATH>         The absolute path to the brightness directory (default: "{s}")
+        \\    --brightness-scroll-ticks <U8>        The number of scroll ticks to get from (default: {})
+        \\
+        \\    --brightness-color <COLOR>            The color of the brightness icon (default: ROSE)
+        \\    --brightness-background-color <COLOR> The background color of the brightness (default: background-color)
         \\
     , .{ default_brightness_directory, default_brightness_scoll_ticks })
 else
-    "") ++ std.fmt.comptimePrint(
+    "") ++ (if (!options.clock_disable)
+    \\    --clock-text-color <COLOR>       The text color of the clock's numbers (default: text-color)
+    \\    --clock-spacer-color <COLOR>     The text color of the clock's spacers (default: PINE)
+    \\    --clock-background-color <COLOR> The background color of the clock (default: background-color)
     \\
-    \\-T, --text-color <COLOR>       The text color by name or by hex code (starting with '#') (default: {s})
-    \\-b, --background-color <COLOR> The background color by name or by hex code (starting with '#') (default: {s})
+else
+    "") ++ (if (!options.workspaces_disable)
+    \\    --workspaces-text-color <COLOR>               The text color of the workspaces (default: text-color)
+    \\    --workspaces-background-color <COLOR>         The background color of the workspaces (default: background-color)
+    \\    --workspaces-hover-text-color <COLOR>         The text color of the workspaces when hovered (default: GOLD)
+    \\    --workspaces-hover-background-color <COLOR>   The background color of the workspaces when hovered (default: HL_MED)
+    \\    --workspaces-active-text-color <COLOR>        The text color of the workspaces when active (default: GOLD)
+    \\    --workspaces-active-background-color <COLOR>  The background color of the workspaces when active (default: PINE)
+    \\    --workspaces-spacing <U16>                    The space (in pixels) between two workspaces (default: 0)
     \\
-, .{ default_text_color, default_background_color }) ++
-    \\-f, --font-size <INT>          The font size in points (default: 20)
-    \\
-;
+else
+    "");
 
 const help_message_prelude = std.fmt.comptimePrint("Walrus-Bar v{s}\n", .{constants.version_str});
 
@@ -146,6 +227,7 @@ const dependencies_message =
     \\ Built with:
     \\ - Zig v{s}
     \\ - Freetype v{s}
+    \\ WORK IN PROGRESS, CHECK SOURCE REPO FOR FULL LIST
     //// TODO: Implement version fetching for dependencies.
     //\\ - Wayland-Client v
     //\\ - Wayland-Scanner v
@@ -204,7 +286,8 @@ const params = clap.parseParamsComptime(help);
 const parsers = .{
     .PATH = pathParser,
     .STR = clap.parsers.string,
-    .INT = clap.parsers.int(u16, 10),
+    .U16 = clap.parsers.int(u16, 0),
+    .U8 = clap.parsers.int(u8, 0),
     .COLOR = colors.str2Color,
 };
 
@@ -234,6 +317,9 @@ const Color = colors.Color;
 const all_colors = colors.all_colors;
 
 const constants = @import("constants.zig");
+
+const drawing = @import("drawing.zig");
+const Size = drawing.Size;
 
 const builtin = @import("builtin");
 const std = @import("std");
