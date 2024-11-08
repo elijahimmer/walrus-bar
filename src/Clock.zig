@@ -1,6 +1,36 @@
 //! TODO: Clock verbose logging
-//! TODO: Go back over and ensure padding works correctly.
+//! TODO: Ensure padding works properly
 pub const Clock = @This();
+
+pub const ClockConfig = struct {
+    pub const text_color_comment = "The icons's color";
+    pub const spacer_color_comment = "The icons's color";
+    pub const background_color_comment = "The background color.";
+
+    pub const spacer_char_comment = "The character to use as a space";
+
+    pub const padding_comment = "The general padding for each size between the letters.";
+
+    pub const padding_north_comment = "Overrides general padding the top side";
+    pub const padding_south_comment = "Overrides general padding the bottom side";
+    pub const padding_east_comment = "Overrides general padding the right side";
+    pub const padding_west_comment = "Overrides general padding the left side";
+
+    text_color: Color = colors.rose,
+    spacer_color: Color = colors.pine,
+    background_color: Color = colors.surface,
+
+    spacer_char: u21 = '',
+
+    padding: ?Size = null,
+
+    padding_north: ?Size = null,
+    padding_south: ?Size = null,
+    padding_east: ?Size = null,
+    padding_west: ?Size = null,
+
+    //inner_padding: ?Size = null,
+};
 
 hours_box: TextBox,
 minutes_box: TextBox,
@@ -17,6 +47,56 @@ spacer_char: u21,
 widget: Widget,
 
 padding: Padding,
+
+pub fn init(area: Rect, config: ClockConfig) Clock {
+    const padding = config.padding orelse 0;
+    const default_text_box = TextBox.init(.{
+        .text = "00",
+        .text_color = config.text_color,
+        .background_color = config.background_color,
+
+        .outline = options.clock_outlines,
+
+        // area undefined because the self.setArea() will set it.
+        .area = undefined,
+
+        // center the text to be more central
+        .padding = padding,
+        .padding_north = config.padding_north orelse config.padding orelse area.height / 8,
+        .padding_south = config.padding_south orelse config.padding orelse area.height / 8,
+
+        // all of the characters a clock would display
+        .scaling = .{ .max = "1234567890" },
+    });
+
+    var self = Clock{
+        .hours_box = default_text_box,
+        .minutes_box = default_text_box,
+        .seconds_box = default_text_box,
+
+        .background_color = config.background_color,
+        .spacer_color = config.spacer_color,
+
+        .spacer_char = config.spacer_char,
+
+        .padding = .{
+            .north = config.padding_north orelse config.padding orelse area.height / 8,
+            .south = config.padding_south orelse config.padding orelse area.height / 8,
+            .east = config.padding_east orelse padding,
+            .west = config.padding_west orelse padding,
+        },
+
+        .widget = .{
+            .vtable = Widget.generateVTable(Clock),
+
+            .area = area,
+        },
+    };
+
+    self.setArea(area);
+
+    return self;
+}
 
 inline fn timeGlyphScaling(size: Size) Size {
     return size * 27 / 20;
@@ -185,83 +265,6 @@ pub fn setArea(self: *Clock, area: Rect) void {
     area.assertContains(self.hours_box.area);
     area.assertContains(self.minutes_box.area);
     area.assertContains(self.seconds_box.area);
-}
-
-pub const NewArgs = struct {
-    area: Rect,
-
-    text_color: Color,
-    spacer_color: Color,
-    background_color: Color,
-
-    spacer_char: []const u8 = "",
-
-    padding: Size,
-
-    padding_north: ?Size = null,
-    padding_south: ?Size = null,
-    padding_east: ?Size = null,
-    padding_west: ?Size = null,
-};
-
-pub fn newWidget(allocator: Allocator, args: NewArgs) Allocator.Error!*Widget {
-    const clock = try allocator.create(Clock);
-
-    clock.* = Clock.init(args);
-
-    return &clock.widget;
-}
-
-pub fn init(args: NewArgs) Clock {
-    assert(args.spacer_char.len > 0);
-    assert(args.spacer_char.len <= 4);
-    assert(unicode.utf8ValidateSlice(args.spacer_char));
-
-    const spacer_char = unicode.utf8Decode(args.spacer_char) catch {
-        @panic("Spacer character isn't valid UTF-8!");
-    };
-
-    const default_text_box = TextBox.init(.{
-        .text = &.{ '0', '0' },
-        .text_color = args.text_color,
-        .background_color = args.background_color,
-
-        .outline = options.clock_outlines,
-
-        // area undefined because the self.setArea() will set it.
-        .area = undefined,
-
-        // center the text to be more central
-        .padding = args.padding,
-        .padding_north = args.padding_north orelse args.padding,
-        .padding_south = args.padding_south orelse args.padding,
-
-        // all of the characters a clock would display
-        .scaling = .{ .max = "1234567890" },
-    });
-
-    var self = Clock{
-        .hours_box = default_text_box,
-        .minutes_box = default_text_box,
-        .seconds_box = default_text_box,
-
-        .background_color = args.background_color,
-        .spacer_color = args.spacer_color,
-
-        .spacer_char = spacer_char,
-
-        .padding = Padding.from(args),
-
-        .widget = .{
-            .vtable = Widget.generateVTable(Clock),
-
-            .area = args.area,
-        },
-    };
-
-    self.setArea(args.area);
-
-    return self;
 }
 
 test {

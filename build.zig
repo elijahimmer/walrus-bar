@@ -52,7 +52,6 @@ pub fn build(b: *std.Build) void {
     options.addOption(bool, "track_damage", track_damage);
 
     { // root container
-        const root_container_disable = b.option(bool, "root-container-disable", "Enable the Root Container                         (default: false)") orelse false;
         const root_container_debug = b.option(bool, "root-container-debug", "Enable all the debugging options for Root Container (default: false)") orelse false;
         const root_container_logging_level = b.option(
             LogLevel,
@@ -60,10 +59,7 @@ pub fn build(b: *std.Build) void {
             "What log level to enable for Root Container         (default: if root-container-debug is true, debug. Otherwise warn)",
         );
 
-        if (root_container_disable and root_container_debug) @panic("You have to enable Root Container to debug it!");
-
         // don't have space so it matches correctly.
-        options.addOption(bool, "rootcontainer_disable", root_container_disable);
         options.addOption(bool, "rootcontainer_debug", root_container_debug);
 
         logging_options.addOption(LogLevel, "RootContainer", root_container_logging_level orelse if (root_container_debug) .debug else .warn);
@@ -92,7 +88,7 @@ pub fn build(b: *std.Build) void {
         if (disable_widget and logging_level != null) @panic("You have to enable " ++ widget ++ " specify it's logging level!");
         if (disable_widget and enable_outlines) @panic("You have to enable " ++ widget ++ " to draw it's outline!");
 
-        options.addOption(bool, widget ++ "_disable", disable_widget);
+        options.addOption(bool, widget ++ "_enabled", !disable_widget);
         options.addOption(bool, widget ++ "_debug", debug_widget);
         options.addOption(bool, widget ++ "_outlines", enable_outlines);
 

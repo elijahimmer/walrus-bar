@@ -208,6 +208,14 @@ test str2Color {
     try expectEqual(0xFF112233, @as(u32, @bitCast(try str2Color("#123"))));
 }
 
+pub fn comptimeColorToString(comptime color: Color) []const u8 {
+    for (COLOR_LIST) |item| {
+        if (std.meta.eql(item.color, color)) return item.name;
+    }
+
+    return std.fmt.comptimePrint("#{x:2}{x:2}{x:2}{x:2}", .{ color.r, color.b, color.g, color.a });
+}
+
 pub const all_colors = struct {
     // TODO: Add more colors here.
     pub const clear: Color = @bitCast(@as(u32, 0));

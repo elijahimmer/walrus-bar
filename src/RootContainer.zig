@@ -6,21 +6,16 @@ area: Rect,
 last_motion: ?Point = null,
 
 // TODO: Remove these widgets and make a separate container struct for them.
-workspaces: if (has_workspaces) ?Workspaces else void = if (has_workspaces) null else {},
-clock: if (has_clock) ?Clock else void = if (has_clock) null else {},
-battery: if (has_battery) ?Battery else void = if (has_battery) null else {},
-brightness: if (has_brightness) ?Brightness else void = if (has_brightness) null else {},
-
-const has_workspaces = !options.workspaces_disable;
-const has_clock = !options.clock_disable;
-const has_battery = !options.battery_disable;
-const has_brightness = !options.brightness_disable;
+workspaces: if (options.workspaces_enabled) ?Workspaces else void = if (options.workspaces_enabled) null else {},
+clock: if (options.clock_enabled) ?Clock else void = if (options.clock_enabled) null else {},
+battery: if (options.battery_enabled) ?Battery else void = if (options.battery_enabled) null else {},
+brightness: if (options.brightness_enabled) ?Brightness else void = if (options.brightness_enabled) null else {},
 
 pub fn deinit(self: *RootContainer) void {
-    if (has_workspaces) if (self.workspaces) |*w| w.deinit();
-    if (has_clock) if (self.clock) |*w| w.deinit();
-    if (has_battery) if (self.battery) |*w| w.deinit();
-    if (has_brightness) if (self.brightness) |*w| w.deinit();
+    if (options.workspaces_enabled) if (self.workspaces) |*w| w.deinit();
+    if (options.clock_enabled) if (self.clock) |*w| w.deinit();
+    if (options.battery_enabled) if (self.battery) |*w| w.deinit();
+    if (options.brightness_enabled) if (self.brightness) |*w| w.deinit();
 }
 
 pub fn setArea(self: RootContainer, area: Rect) void {
@@ -123,24 +118,16 @@ pub fn init(area: Rect) RootContainer {
         .area = area,
     };
 
-    if (!options.clock_disable) {
-        var clock = Clock.init(.{
-            .text_color = config.clock_text_color,
-            .background_color = config.clock_background_color,
-
-            .spacer_color = config.clock_spacer_color,
-
-            .padding = 0,
-            .padding_north = @intCast(area.height / 6),
-            .padding_south = @intCast(area.height / 6),
-
-            .area = .{
+    if (options.clock_enabled) {
+        var clock = Clock.init(
+            .{
                 .x = 0,
                 .y = 0,
                 .width = 1000,
                 .height = area.height,
             },
-        });
+            config.clock_config,
+        );
 
         var center_area = clock.widget.area;
         center_area.width = clock.getWidth();
@@ -150,27 +137,16 @@ pub fn init(area: Rect) RootContainer {
         root_container.clock = clock;
     }
 
-    if (!options.workspaces_disable) workspaces: {
-        var workspaces = Workspaces.init(.{
-            .text_color = config.workspaces_text_color,
-            .background_color = config.workspaces_background_color,
-
-            .hover_workspace_background = config.workspaces_hover_background_color,
-            .hover_workspace_text = config.workspaces_hover_text_color,
-
-            .active_workspace_background = config.workspaces_active_background_color,
-            .active_workspace_text = config.workspaces_active_text_color,
-
-            .workspace_spacing = config.workspaces_spacing,
-            .padding = 0,
-
-            .area = .{
+    if (options.workspaces_enabled) workspaces: {
+        var workspaces = Workspaces.init(
+            .{
                 .x = 0,
                 .y = 0,
                 .width = 1000,
                 .height = area.height,
             },
-        }) catch |err| {
+            config.workspaces_config,
+        ) catch |err| {
             log.warn("Failed to initialize Workspace with: {s}", .{@errorName(err)});
             break :workspaces;
         };
@@ -183,7 +159,7 @@ pub fn init(area: Rect) RootContainer {
         root_container.workspaces = workspaces;
     }
 
-    if (!options.battery_disable) battery: {
+    if (options.battery_enabled) battery: {
         var battery = Battery.init(.{
             .x = area.width - 1000,
             .y = 0,
@@ -206,8 +182,8 @@ pub fn init(area: Rect) RootContainer {
         root_container.battery = battery;
     }
 
-    if (!options.brightness_disable) brightness: {
-        const x_pos = if (has_battery and root_container.battery != null) root_container.battery.?.widget.area.x - 1000 else root_container.area.width - 1000;
+    if (options.brightness_enabled) brightness: {
+        const x_pos = if (options.battery_enabled and root_container.battery != null) root_container.battery.?.widget.area.x - 1000 else root_container.area.width - 1000;
 
         var brightness = Brightness.init(.{
             .x = x_pos,

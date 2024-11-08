@@ -18,11 +18,46 @@ pub const WorkspacesArray = BoundedArray(Workspace, max_workspace_count);
 /// unicode iteration and decoding to get a symbol.
 pub const WorkspaceSymbolArray = BoundedArray(u21, max_workspace_count);
 
-pub const default_workspaces_hover_text_color = "gold";
-pub const default_workspaces_hover_background_color = "hl_med";
-pub const default_workspaces_active_text_color = "gold";
-pub const default_workspaces_active_background_color = "pine";
-pub const default_workspaces_spacing = 0;
+pub const WorkspacesConfig = struct {
+    pub const text_color_comment = "The text color of the workspaces";
+    pub const background_color_comment = "The background color of the workspaces";
+    pub const hovered_text_color_comment = "The text color of the workspaces when hovered";
+    pub const hovered_background_color_comment = "The background color of the workspaces when hovered";
+    pub const active_text_color_comment = "The text color of the workspaces when active";
+    pub const active_background_color_comment = "The background color of the workspaces when active";
+    pub const spacing_comment = " The space (in pixels) between two workspaces";
+
+    pub const padding_comment = "The general padding for each size between the letters.";
+
+    pub const padding_north_comment = "Overrides general padding the top side";
+    pub const padding_south_comment = "Overrides general padding the bottom side";
+    pub const padding_east_comment = "Overrides general padding the right side";
+    pub const padding_west_comment = "Overrides general padding the left side";
+
+    pub const symbols_comment = "A list of UTF8 characters, each one corresponding to a workspace in order.";
+
+    //// times 2 because each character is 2 bytes wide.
+    //// UPDATE IF THE STRING IS EVER CHANGED!
+    symbols: []const u8 = "ΑΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩ"[0 .. max_workspace_count * 2],
+
+    text_color: Color = colors.rose,
+    background_color: Color = colors.surface,
+
+    hovered_text_color: Color = colors.gold,
+    hovered_background_color: Color = colors.hl_med,
+
+    active_text_color: Color = colors.gold,
+    active_background_color: Color = colors.pine,
+
+    spacing: Size = 0,
+
+    padding: Size = 0,
+
+    padding_north: ?Size = null,
+    padding_south: ?Size = null,
+    padding_east: ?Size = null,
+    padding_west: ?Size = null,
+};
 
 /// The global workspace state, given by the workspaces worker.
 const workspace_state = &WorkspaceState.global;
@@ -74,17 +109,18 @@ workspaces_symbols: WorkspaceSymbolArray,
 /// Returns the width this widget wants to take up.
 pub fn getWidth(self: *Workspaces) Size {
     const area = self.widget.area.removePadding(self.padding) orelse return 0;
-    return (area.height + self.workspace_spacing) * max_workspace_count;
+    return (area.height + self.workspace_spacing) * max_workspace_count + self.padding.west + self.padding.east;
 }
 
 /// Sets the area of this widget to the area given,
 /// and tells it to redraw if needed.
 pub fn setArea(self: *Workspaces, area: Rect) void {
-    // TODO: Make this have a dynamic max_workspace_count for the size it can hold.
-    assert(area.height * max_workspace_count <= area.width);
+    defer self.widget.area = area;
+    defer self.widget.full_redraw = true;
 
-    self.widget.area = area;
-    self.widget.full_redraw = true;
+    // TODO: Make this have a dynamic max_workspace_count for the size it can hold.
+    const area_without_padding = area.removePadding(self.padding) orelse return;
+    assert(area_without_padding.height * max_workspace_count <= area_without_padding.width);
 }
 
 /// Given a total height, give the font size for workspace symbols.
@@ -96,6 +132,20 @@ pub inline fn fontScalingFactor(height: Size) Size {
 /// to draw any changes in state (or redraw fully if needed).
 pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
     try self.updateState();
+
+    // ensure the workspaces are sorted.
+    assert(std.sort.isSorted(Workspace, self.workspaces.constSlice(), {}, struct {
+        pub fn lessThan(_: void, lhs: Workspace, rhs: Workspace) bool {
+            return lhs.id < rhs.id;
+        }
+    }.lessThan));
+
+    // ensure each workspace has a unique id.
+    for (self.workspaces.constSlice(), 0..) |wksp, idx| {
+        for (self.workspaces.constSlice()[idx + 1 ..]) |wksp2| assert(wksp.id != wksp2.id);
+    }
+
+    defer self.widget.full_redraw = false;
 
     const full_redraw = draw_context.full_redraw or self.widget.full_redraw;
 
@@ -182,7 +232,7 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
 /// Returns the workspace ID for a given workspace, or if not found, a replacement glyph.
 fn getWorkspaceSymbol(self: *const Workspaces, id: WorkspaceID) u21 {
     // above zero because WorkspaceID start at 1.
-    if (id > 0 and id <= max_workspace_count) return self.workspaces_symbols.get(@intCast(id - 1));
+    if (id > 0 and id <= self.workspaces_symbols.len) return self.workspaces_symbols.get(@intCast(id - 1));
     return '?'; // unknown workspace
 }
 
@@ -225,23 +275,40 @@ fn updateState(self: *Workspaces) !void {
         .eq => {},
     }
 
+    defer self.active_workspace = workspace_state.active_workspace;
+
+    var newly_active_found = false;
+    var prev_active_found = false;
+
+    const counter_max = self.workspaces.len;
+
     assert(workspace_state.workspaces.len == self.workspaces.len);
-    for (workspace_state.workspaces.constSlice(), self.workspaces.slice()) |wk_id, *wksp| {
-        wksp.id = wk_id;
+    defer assert(workspace_state.workspaces.len == self.workspaces.len);
+    for (workspace_state.workspaces.constSlice(), self.workspaces.slice(), 0..) |wk_id, *wksp, counter| {
+        assert(counter < counter_max);
+
+        defer wksp.id = wk_id;
         const wk_symbol = self.getWorkspaceSymbol(wk_id);
 
         const newly_active = wk_id == workspace_state.active_workspace and wk_id != self.active_workspace;
         const prev_active = wk_id == self.active_workspace and wk_id != workspace_state.active_workspace;
 
+        if (newly_active) {
+            assert(!newly_active_found);
+            newly_active_found = true;
+        }
+        if (prev_active) {
+            assert(!prev_active_found);
+            prev_active_found = true;
+        }
+
         wksp.should_redraw = wksp.should_redraw or newly_active or prev_active;
 
-        if (wksp.char != wk_symbol) {
+        if (wksp.id != wk_id) {
             wksp.char = wk_symbol;
             wksp.should_redraw = true;
         }
     }
-
-    self.active_workspace = workspace_state.active_workspace;
 }
 
 // converts a point into the index of the workspace that contains that point,
@@ -249,6 +316,7 @@ fn updateState(self: *Workspaces) !void {
 fn pointToWorkspaceIndex(self: *const Workspaces, point: Point) ?WorkspaceIndex {
     // if the widget is empty after it's padding
     const area = self.widget.area.removePadding(self.padding) orelse return null;
+    if (!area.containsPoint(point)) return null;
     const x_local = point.x - area.x;
 
     // if you aren't over any workspaces due to the padding.
@@ -257,10 +325,11 @@ fn pointToWorkspaceIndex(self: *const Workspaces, point: Point) ?WorkspaceIndex 
     // if you are between workspaces, you aren't hovering above one.
     if (x_local % (area.height + self.workspace_spacing) > area.height) return null;
 
-    const workspace_idx = x_local / (area.height + self.workspace_spacing);
+    const workspace_idx_raw = x_local / (area.height + self.workspace_spacing);
+    const workspace_idx = math.cast(WorkspaceIndex, workspace_idx_raw) orelse return null;
 
     if (workspace_idx >= self.workspaces.len) return null;
-    return @intCast(workspace_idx);
+    return workspace_idx;
 }
 
 // Changes workspaces to whichever workspace was clicked on.
@@ -277,72 +346,18 @@ pub fn click(self: *const Workspaces, point: Point, button: MouseButton) void {
     }
 }
 
-/// The arguments for creating a Workspaces widget.
-pub const NewArgs = struct {
-    /// The background color of a normal workspace (not hovered or active)
-    background_color: Color,
-    /// The text color of a normal workspace (not hovered or active)
-    text_color: Color,
-
-    /// the background color of whichever workspace is hovered by the cursor.
-    hover_workspace_background: Color,
-    /// the text color of whichever workspace is hovered by the cursor.
-    hover_workspace_text: Color,
-
-    /// the background color of the active workspace.
-    active_workspace_background: Color,
-    /// The text color of the active workspace.
-    active_workspace_text: Color,
-
-    /// The array of UTF8 characters, each one corresponding
-    /// to a workspace what an ID of it's index + 1.
-    /// (so the first glyph is workspace 1, the second 2, etc.)
-    ///
-    /// Any symbols above the `max_workspace_count` idx, will
-    /// be ignored.
-    workspaces_symbols: []const u8 = "ΑΒΓΔΕΖΗΘΙΚ", //ΛΜΝΞΟΠΡΣΤΥΦΧΨΩ",
-
-    /// The spacing between workspaces in pixels
-    workspace_spacing: Size,
-
-    /// The general padding for each size.
-    padding: Size,
-
-    /// Overrides general padding the top side
-    padding_north: ?Size = null,
-    /// Overrides general padding the bottom side
-    padding_south: ?Size = null,
-    /// Overrides general padding the right side
-    padding_east: ?Size = null,
-    /// Overrides general padding the left side
-    padding_west: ?Size = null,
-
-    /// The area the widget will take up.
-    area: Rect,
-};
-
-/// Allocates a new workspaces widget and initializes it.
-/// Must call deinit on the returned widget to destroy.
-pub fn new(allocator: Allocator, args: NewArgs) !*Widget {
-    const workspaces = try allocator.create(Workspaces);
-
-    workspaces.* = try init(args);
-
-    return &workspaces.widget;
-}
-
 /// Initializes the workspaces widget.
 /// Must call deinit to destroy.
-pub fn init(args: NewArgs) !Workspaces {
+pub fn init(area: Rect, config: WorkspacesConfig) !Workspaces {
     if (options.workspaces_provider == .none) return error.@"None Selected";
 
-    assert(unicode.utf8ValidateSlice(args.workspaces_symbols));
+    assert(unicode.utf8ValidateSlice(config.symbols));
 
     try workspace_state.init();
 
     // convert given string of workspaces into a decoded unicode array
     var symbols = WorkspaceSymbolArray{};
-    var utf8_iter = unicode.Utf8Iterator{ .bytes = args.workspaces_symbols, .i = 0 };
+    var utf8_iter = unicode.Utf8Iterator{ .bytes = config.symbols, .i = 0 };
 
     // No loop counter, append bounds it already.
     while (utf8_iter.nextCodepoint()) |char| {
@@ -353,26 +368,31 @@ pub fn init(args: NewArgs) !Workspaces {
     }
 
     return .{
-        .background_color = args.background_color,
-        .text_color = args.text_color,
+        .background_color = config.background_color,
+        .text_color = config.text_color,
 
-        .hover_workspace_background = args.hover_workspace_background,
-        .hover_workspace_text = args.hover_workspace_text,
+        .hover_workspace_background = config.hovered_background_color,
+        .hover_workspace_text = config.hovered_text_color,
 
         .active_workspace = undefined,
-        .active_workspace_background = args.active_workspace_background,
-        .active_workspace_text = args.active_workspace_text,
+        .active_workspace_background = config.active_background_color,
+        .active_workspace_text = config.active_text_color,
 
         .workspaces = .{},
         .workspaces_symbols = symbols,
 
-        .padding = Padding.from(args),
+        .padding = .{
+            .north = config.padding_north orelse config.padding,
+            .south = config.padding_south orelse config.padding,
+            .east = config.padding_east orelse config.padding,
+            .west = config.padding_west orelse config.padding,
+        },
 
-        .workspace_spacing = args.workspace_spacing,
+        .workspace_spacing = config.spacing,
 
         .widget = .{
             .vtable = Widget.generateVTable(Workspaces),
-            .area = args.area,
+            .area = area,
         },
     };
 }
@@ -425,8 +445,9 @@ const Color = colors.Color;
 const options = @import("options");
 
 const std = @import("std");
-const posix = std.posix;
 const unicode = std.unicode;
+const posix = std.posix;
+const math = std.math;
 
 const Allocator = std.mem.Allocator;
 const BoundedArray = std.BoundedArray;

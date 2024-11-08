@@ -2,8 +2,8 @@
 
 pub const Config = @This();
 
-pub const default_text_color = "rose";
-pub const default_background_color = "surface";
+pub const default_text_color = colors.rose;
+pub const default_background_color = colors.surface;
 pub const Path = struct {
     path: []const u8,
 };
@@ -31,25 +31,13 @@ height: u16,
 
 title: []const u8,
 
+text_color: Color,
 background_color: Color,
 
-clock_text_color: if (!options.clock_disable) Color else void,
-clock_spacer_color: if (!options.clock_disable) Color else void,
-clock_background_color: if (!options.clock_disable) Color else void,
-
-workspaces_text_color: if (!options.workspaces_disable) Color else void,
-workspaces_background_color: if (!options.workspaces_disable) Color else void,
-
-workspaces_hover_text_color: if (!options.workspaces_disable) Color else void,
-workspaces_hover_background_color: if (!options.workspaces_disable) Color else void,
-
-workspaces_active_text_color: if (!options.workspaces_disable) Color else void,
-workspaces_active_background_color: if (!options.workspaces_disable) Color else void,
-
-workspaces_spacing: if (!options.workspaces_disable) Size else void,
-
-battery_config: if (!options.battery_disable) BatteryConfig else void,
-brightness_config: if (!options.brightness_disable) BrightnessConfig else void,
+clock_config: if (options.clock_enabled) ClockConfig else void,
+battery_config: if (options.battery_enabled) BatteryConfig else void,
+brightness_config: if (options.brightness_enabled) BrightnessConfig else void,
+workspaces_config: if (options.workspaces_enabled) WorkspacesConfig else void,
 
 fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     var iter = std.process.ArgIterator.init();
@@ -100,8 +88,8 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         exit(1);
     }
 
-    const text_color = args.@"text-color" orelse @field(colors, default_text_color);
-    const background_color = args.@"background-color" orelse @field(colors, default_background_color);
+    const text_color = args.@"text-color" orelse default_text_color;
+    const background_color = args.@"background-color" orelse default_background_color;
 
     return Config{
         .clap_res = res,
@@ -110,32 +98,23 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .width = args.width,
         .height = args.height orelse 28,
 
+        .text_color = text_color,
         .background_color = background_color,
 
-        .battery_config = if (!options.battery_disable) createConfig(BatteryConfig, args) else {},
-        .brightness_config = if (!options.brightness_disable) createConfig(BrightnessConfig, args) else {},
-
-        .clock_text_color = if (!options.clock_disable) args.@"clock-text-color" orelse text_color else {},
-        .clock_spacer_color = if (!options.clock_disable) args.@"clock-spacer-color" orelse colors.pine else {},
-        .clock_background_color = if (!options.clock_disable) args.@"clock-background-color" orelse background_color else {},
-
-        .workspaces_text_color = if (!options.workspaces_disable) args.@"workspaces-text-color" orelse text_color else {},
-        .workspaces_background_color = if (!options.workspaces_disable) args.@"workspaces-background-color" orelse background_color else {},
-
-        .workspaces_hover_text_color = if (!options.workspaces_disable) args.@"workspaces-hover-text-color" orelse @field(colors, default_workspaces_hover_text_color) else {},
-        .workspaces_hover_background_color = if (!options.workspaces_disable) args.@"workspaces-hover-background-color" orelse @field(colors, default_workspaces_hover_background_color) else {},
-
-        .workspaces_active_text_color = if (!options.workspaces_disable) args.@"workspaces-active-text-color" orelse @field(colors, default_workspaces_active_text_color) else {},
-        .workspaces_active_background_color = if (!options.workspaces_disable) args.@"workspaces-active-background-color" orelse @field(colors, default_workspaces_active_background_color) else {},
-
-        .workspaces_spacing = if (!options.workspaces_disable) args.@"workspaces-spacing" orelse 0 else {},
+        .battery_config = if (options.battery_enabled) createConfig(BatteryConfig, args) else {},
+        .brightness_config = if (options.brightness_enabled) createConfig(BrightnessConfig, args) else {},
+        .clock_config = if (options.clock_enabled) createConfig(ClockConfig, args) else {},
+        .workspaces_config = if (options.workspaces_enabled) createConfig(WorkspacesConfig, args) else {},
 
         .title = args.title orelse std.mem.span(std.os.argv[0]),
     };
 }
 
 fn getArgName(comptime T: type, name: []const u8) []const u8 {
-    const type_name = type_name: {
+    // Not sure why 1_000 branches isn't enough, seems to be something with lastIndexOfScalar or lowerString
+    @setEvalBranchQuota(10_000);
+
+    const type_name = comptime type_name: {
         const type_name = @typeName(T);
         const ends_with_config = ascii.endsWithIgnoreCase(type_name, "config");
 
@@ -158,7 +137,6 @@ fn getArgName(comptime T: type, name: []const u8) []const u8 {
 
 /// Gets all the config options from the clap config
 pub fn createConfig(comptime T: type, args: anytype) T {
-    @setEvalBranchQuota(10_000);
     assert(@typeInfo(T) == .Struct);
     const type_info = @typeInfo(T).Struct;
 
@@ -169,7 +147,30 @@ pub fn createConfig(comptime T: type, args: anytype) T {
 
         const arg_type = @TypeOf(@field(out, field.name));
 
-        if (@field(args, arg_name)) |value| {
+        // place transient configs here, like background and text colors.
+
+        inline for (.{
+            .{ "background_color", Color, default_background_color },
+            .{ "text_color", Color, default_text_color },
+        }) |loop| {
+            const name, const ttype, const default = loop;
+
+            if (comptime ascii.eqlIgnoreCase(field.name, name)) {
+                if (field.type != ttype) @compileError(name ++ " field isn't a " ++ @typeName(ttype) ++ "! type: " ++ @typeName(field.type));
+
+                const transient_arg_name = comptime transient_arg_name: {
+                    var tan = name.*;
+
+                    mem.replaceScalar(u8, &tan, '_', '-');
+
+                    break :transient_arg_name &tan;
+                };
+
+                @field(out, field.name) = @field(args, arg_name) orelse @field(args, transient_arg_name) orelse default;
+
+                break;
+            }
+        } else if (@field(args, arg_name)) |value| {
             @field(out, field.name) = switch (arg_type) {
                 Path => .{ .path = value },
                 else => value,
@@ -186,6 +187,7 @@ pub fn resolveTypeName(comptime T: type) []const u8 {
     return switch (tt) {
         Path => "Path",
         []const u8 => "String",
+        u21 => "Character",
         Size => "Size",
         Color => "Color",
         else => @typeName(T),
@@ -194,7 +196,6 @@ pub fn resolveTypeName(comptime T: type) []const u8 {
 
 /// Turns a configuration struct into a help message.
 pub fn generateHelpMessageComptime(comptime T: type) [helpMessageLen(T)]u8 {
-    @setEvalBranchQuota(10_000);
     assert(@typeInfo(T) == .Struct);
     const type_info = @typeInfo(T).Struct;
 
@@ -223,7 +224,6 @@ pub fn generateHelpMessageComptime(comptime T: type) [helpMessageLen(T)]u8 {
 }
 
 pub fn helpMessageLen(T: type) comptime_int {
-    @setEvalBranchQuota(10_000);
     assert(@typeInfo(T) == .Struct);
     const type_info = @typeInfo(T).Struct;
 
@@ -251,45 +251,46 @@ pub fn helpMessageLen(T: type) comptime_int {
 }
 
 const help =
-    \\-h, --help                     Display this help and exit.
+    std.fmt.comptimePrint(
+    \\-h, --help                     Display this message and exit.
     \\    --dependencies             Print a list of the dependencies and versions and exit.
     \\    --colors                   Print a list of all the named colors and exit.
     \\-w, --width <Size>              The window's width (full screen if not specified)
     \\-l, --height <Size>             The window's height (minimum: 15) (default: 28)
-    \\-t, --title <String>              The window's title (default: OS Process Name [likely 'walrus-bar'])
+    \\-t, --title <String>              The window's title (default: OS Process Name (likely 'walrus-bar'))
     \\
-++ std.fmt.comptimePrint(
-    \\-T, --text-color <Color>       The text color by name or by hex code (starting with '#') (default: {s})
-    \\-b, --background-color <Color> The background color by name or by hex code (starting with '#') (default: {s})
+    \\--text-color <Color>       The default text colors (default: {s})
+    \\--background-color <Color> The default background color (default: {s})
     \\
-, .{ default_text_color, default_background_color }) ++ (if (!options.battery_disable) generateHelpMessageComptime(BatteryConfig) else "") ++ (if (!options.brightness_disable) generateHelpMessageComptime(BrightnessConfig) else "") ++
-    (if (!options.clock_disable)
-    \\    --clock-text-color <Color>       The text color of the clock's numbers (default: text-color)
-    \\    --clock-spacer-color <Color>     The text color of the clock's spacers (default: PINE)
-    \\    --clock-background-color <Color> The background color of the clock (default: background-color)
-    \\
-else
-    "") ++ (if (!options.workspaces_disable)
-    std.fmt.comptimePrint(
-        \\    --workspaces-text-color <Color>               The text color of the workspaces (default: text-color)
-        \\    --workspaces-background-color <Color>         The background color of the workspaces (default: background-color)
-        \\    --workspaces-hover-text-color <Color>         The text color of the workspaces when hovered (default: {s})
-        \\    --workspaces-hover-background-color <Color>   The background color of the workspaces when hovered (default: {s})
-        \\    --workspaces-active-text-color <Color>        The text color of the workspaces when active (default: {s})
-        \\    --workspaces-active-background-color <Color>  The background color of the workspaces when active (default: {s})
-        \\    --workspaces-spacing <Size>                    The space (in pixels) between two workspaces (default: {})
-        \\
-    , .{
-        default_workspaces_hover_text_color,
-        default_workspaces_hover_background_color,
-        default_workspaces_active_text_color,
-        default_workspaces_active_background_color,
-        default_workspaces_spacing,
-    })
-else
-    "");
+, .{ colors.comptimeColorToString(default_text_color), colors.comptimeColorToString(default_background_color) }) ++
+    (if (options.clock_enabled) generateHelpMessageComptime(ClockConfig) else "") ++
+    (if (options.battery_enabled) generateHelpMessageComptime(BatteryConfig) else "") ++
+    (if (options.brightness_enabled) generateHelpMessageComptime(BrightnessConfig) else "") ++
+    (if (options.workspaces_enabled) generateHelpMessageComptime(WorkspacesConfig) else "");
 
-const help_message_prelude = std.fmt.comptimePrint("Walrus-Bar v{s}\n", .{constants.version_str});
+/// Keep up to date with `help_message_prelude`
+const parsers = .{
+    .Path = pathParser,
+    .Character = characterParser,
+    .String = clap.parsers.string,
+    .Size = clap.parsers.int(Size, 0),
+    .u8 = clap.parsers.int(u8, 0),
+    .Color = colors.str2Color,
+};
+
+/// Keep up to date with `parsers`
+const help_message_prelude = std.fmt.comptimePrint(
+    \\Walrus-Bar v{s}
+    \\   Types:
+    \\      - Color: A color by name (for list try `--colors`) or by hex code (starting with '#')
+    \\      - String: A string of valid UTF-8 characters
+    \\      - Character: A single valid UTF-8 character (can be multiple bytes)
+    \\      - Path: A valid absolute file system path
+    \\      - Size: An amount of pixels
+    \\      - u8: A number between 0 and 255 inclusive.
+    \\
+    \\
+, .{constants.version_str});
 
 const dependencies_message =
     std.fmt.comptimePrint(
@@ -297,7 +298,9 @@ const dependencies_message =
     \\ Built with:
     \\ - Zig v{s}
     \\ - Freetype v{s}
+    \\
     \\ WORK IN PROGRESS, CHECK SOURCE REPO FOR FULL LIST
+    \\ > https://github.com/elijahimmer/walrus-bar
     //// TODO: Implement version fetching for dependencies.
     //\\ - Wayland-Client v
     //\\ - Wayland-Scanner v
@@ -353,40 +356,61 @@ pub fn printColorsMessage(writer: anytype) !void {
 
 const params = clap.parseParamsComptime(help);
 
-const parsers = .{
-    .Path = pathParser,
-    .String = clap.parsers.string,
-    .Size = clap.parsers.int(Size, 0),
-    .u8 = clap.parsers.int(u8, 0),
-    .Color = colors.str2Color,
+const ParseStringError = error{
+    @"String empty!",
+    @"Invalid UTF-8 String!",
 };
 
+fn parseString(str: []const u8) ![]const u8 {
+    if (str.len == 0) return error.@"String empty!";
+    if (!unicode.utf8ValidateSlice(str)) return error.@"Invalid UTF-8 String!";
+    return str;
+}
+
 const PathParserError = error{
-    PathTooLong,
-    PathNotAbsolute,
+    @"Path too long",
+    @"Path isn't absolute",
 };
 
 fn pathParser(path: []const u8) PathParserError![]const u8 {
-    if (path.len > std.fs.max_path_bytes) return error.PathTooLong;
-    if (!fs.path.isAbsolute(path)) return error.PathNotAbsolute;
+    if (path.len > std.fs.max_path_bytes) return error.@"Path too long";
+    if (!fs.path.isAbsolute(path)) return error.@"Path isn't absolute";
 
     return path;
 }
 
+const CharacterParserError = error{
+    @"No character provided",
+    @"Character isn't valid UTF-8",
+    @"Too many characters provided, only 1 character allowed",
+};
+
+fn characterParser(character: []const u8) CharacterParserError!u21 {
+    if (character.len == 0) return error.@"No character provided";
+    const sequence_length = unicode.utf8ByteSequenceLength(character[0]) catch {
+        return error.@"Character isn't valid UTF-8";
+    };
+    if (sequence_length != character.len) return error.@"Too many characters provided, only 1 character allowed";
+
+    const char = unicode.utf8Decode(character) catch {
+        return error.@"Character isn't valid UTF-8";
+    };
+
+    return char;
+}
+
 const options = @import("options");
 
-const Battery = @import("Battery.zig");
-const BatteryConfig = Battery.BatteryConfig;
+const ClockConfig = @import("Clock.zig").ClockConfig;
+const BatteryConfig = @import("Battery.zig").BatteryConfig;
+const BrightnessConfig = @import("Brightness.zig").BrightnessConfig;
 
-const Brightness = @import("Brightness.zig");
-const BrightnessConfig = Brightness.BrightnessConfig;
-
-const Workspaces = @import("workspaces/Workspaces.zig");
-const default_workspaces_hover_text_color = Workspaces.default_workspaces_hover_text_color;
-const default_workspaces_hover_background_color = Workspaces.default_workspaces_hover_background_color;
-const default_workspaces_active_text_color = Workspaces.default_workspaces_active_text_color;
-const default_workspaces_active_background_color = Workspaces.default_workspaces_active_background_color;
-const default_workspaces_spacing = Workspaces.default_workspaces_spacing;
+const WorkspacesConfig = @import("workspaces/Workspaces.zig").WorkspacesConfig;
+//const default_workspaces_hover_text_color = Workspaces.default_workspaces_hover_text_color;
+//const default_workspaces_hover_background_color = Workspaces.default_workspaces_hover_background_color;
+//const default_workspaces_active_text_color = Workspaces.default_workspaces_active_text_color;
+//const default_workspaces_active_background_color = Workspaces.default_workspaces_active_background_color;
+//const default_workspaces_spacing = Workspaces.default_workspaces_spacing;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
@@ -399,6 +423,7 @@ const Size = drawing.Size;
 
 const builtin = @import("builtin");
 const std = @import("std");
+const unicode = std.unicode;
 const ascii = std.ascii;
 const mem = std.mem;
 const fs = std.fs;
