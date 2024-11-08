@@ -344,10 +344,6 @@ pub const LoadCharOptions = struct {
 pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, args: LoadCharOptions) *Glyph {
     assert(char_slice.len > 0);
 
-    if (unicode.utf8ByteSequenceLength(char_slice[0]) catch null) |len| {
-        assert(char_slice.len == len);
-    }
-
     const utf8_char = unicode.utf8Decode(char_slice) catch |err| utf8_char: {
         log.warn("\tFailed to decode character as UTF8 with: {s}", .{@errorName(err)});
 
@@ -371,6 +367,7 @@ pub fn loadChar(self: *FreeTypeContext, char: u21, args: LoadCharOptions) *Glyph
         break :cache_record self.cache.getOrPut(cache_key) catch unreachable;
     };
 
+    // get char slice for debugging
     var char_slice: [4]u8 = undefined;
 
     const bytes = unicode.utf8Encode(char, &char_slice) catch |err| switch (err) {

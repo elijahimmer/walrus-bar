@@ -281,6 +281,7 @@ const parsers = .{
 /// Keep up to date with `parsers`
 const help_message_prelude = std.fmt.comptimePrint(
     \\Walrus-Bar v{s}
+    \\   Source Repo: https://github.com/elijahimmer/walrus-bar
     \\   Types:
     \\      - Color: A color by name (for list try `--colors`) or by hex code (starting with '#')
     \\      - String: A string of valid UTF-8 characters

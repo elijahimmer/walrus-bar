@@ -4,7 +4,8 @@
 pub const Brightness = @This();
 
 /// The brightness symbol to draw.
-const brightness_symbol: u21 = unicode.utf8Decode("󰃞") catch unreachable;
+const brightness_symbol: u21 = '󰃞';
+
 /// Don't transform
 const brightness_transform = Transform.identity;
 

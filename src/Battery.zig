@@ -4,12 +4,12 @@
 pub const Battery = @This();
 
 /// The battery symbol to draw.
-const battery_symbol: u21 = unicode.utf8Decode("") catch unreachable;
+const battery_symbol: u21 = '';
 /// Don't transform
 const battery_transform = Transform.identity;
 
 /// options: 󱐋 need to test both.
-const charging_symbol: u21 = unicode.utf8Decode("") catch unreachable;
+const charging_symbol: u21 = '';
 /// Turn it right 90 degrees
 const charging_transform = Transform.right;
 /// The alpha for the progress area when it is charging,

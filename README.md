@@ -7,36 +7,33 @@ This should work for most any compositor, and please submit any
 bug reports if it is found to not work on one of them.
 
 ## Features
-A Clock, Battery, and Workspaces widgets are all done.
+A Clock, Battery, Brightness, and Workspaces widgets are all done.
 
 Sofar this only has Hyprland workspace support, but more should be relatively easy to add.
 Just submit a bug report and ask for it, or make a PR and add it (look at [#Contributing](#Contributing))
 
-The Battery widget just uses the `/sys/class/power_supply` files, but if there are any other ways
-that someones wants supported, submit a bug report and ask.
+The Battery widget uses the `/sys/class/power_supply/BAT0` directory for information by default, but can be specified.
+The Brightness widget uses the `/sys/class/backlight/intel_backlight` directory for information by default, but can be specified.
 
 ## Building
 **If you find any dependencies I am missing here, please submit a bug report about it.**
-I recommend nix for managing the dependencies, but if you cannot use it, or just don't want,
+I recommend nix for managing the dependencies, but if you cannot use it, or just don't want to,
 all the required build dependencies should be (exact versions not needed):
 
-- pkg-config 0.29.2 (you likely already have this)
-- Zig 0.13.0
-- wayland-client 1.23.1
-- wayland-scanner 1.23.1
+- pkg-config 0.29.* (you likely already have this)
+- Zig 0.13.*
+- wayland-client 1.23.*
+- wayland-scanner 1.23.*
 
 Everything else should be bundled in, or managed by the Zig compiler.
 
 ### Build Instructions:
-If you have nix installed, with a flake compatible system,
-just run
+If you have nix installed, with a flake compatible system, run
 ```sh
-nix develop
+nix build
 ```
 
-If not, after you acquire the needed dependencies (listed above),
-just run
-
+If not, after you acquire the needed dependencies (listed above), run
 ```sh
 zig build --release=safe
 ```
@@ -45,10 +42,10 @@ I recommend compiling with `--release=safe`, but you can also do `--release=fast
 to optimize for speed and binary size respectively.
 
 ## Performance
-As of 0.1.3, the slowest part of this is the overhead of the Wayland connections,
+As of 0.1.4, the slowest part of this is the overhead of the Wayland connections,
 but multiple outputs and HI-DPI outputs have yet to be thoroughly tested.
 
-Normally this idles 0.0% CPU usage, and ~4 Mib of memory (much of which is the font).
+Normally this idles 0.0% to 0.1% CPU usage, and ~4 Mib of memory (much of which is the font).
 If you load a custom font (which is not yet supported), it will take up more.
 
 ## Contributing

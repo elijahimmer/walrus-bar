@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
 
     const versions = b.addOptions();
     { // versions
-        versions.addOption([]const u8, "version", "0.1.3");
+        versions.addOption([]const u8, "version", "0.1.4");
         versions.addOption([]const u8, "zig_clap_version", "0.0.0");
     }
 
