@@ -210,22 +210,11 @@ pub fn init(area: Rect) RootContainer {
         const x_pos = if (has_battery and root_container.battery != null) root_container.battery.?.widget.area.x - 1000 else root_container.area.width - 1000;
 
         var brightness = Brightness.init(.{
-            .background_color = config.brightness_background_color,
-            .brightness_color = config.brightness_color,
-
-            .brightness_directory = config.brightness_directory,
-
-            .scroll_ticks = config.scroll_ticks,
-
-            .padding = 0, //@as(u16, @intCast(area.height / 10)),
-
-            .area = .{
-                .x = x_pos,
-                .y = 0,
-                .width = 1000,
-                .height = area.height,
-            },
-        }) catch |err| {
+            .x = x_pos,
+            .y = 0,
+            .width = 1000,
+            .height = area.height,
+        }, config.brightness_config) catch |err| {
             log.warn("Failed to initalized Brightness with: {s}", .{@errorName(err)});
             break :brightness;
         };

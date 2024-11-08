@@ -8,25 +8,15 @@ const brightness_symbol: u21 = unicode.utf8Decode("󰃞") catch unreachable;
 /// Don't transform
 const brightness_transform = Transform.identity;
 
-/// The default brightness directory, public for Config.zig to use
-pub const default_brightness_directory = "/sys/class/backlight/intel_backlight";
-pub const default_brightness_scoll_ticks: u32 = 100;
-pub const default_brightness_color = "rose";
-
-const max_brightness_file_name = "max_brightness";
-
-/// the file name of the charge file.
-const current_brightness_file_name = "brightness";
-
-/// The max length between all the file names.
-const max_file_name = @max(max_brightness_file_name.len, current_brightness_file_name.len);
-
 pub const BrightnessConfig = struct {
     pub const directory_comment = "The directory the battery is in.";
 
     pub const max_brightness_file_name_comment = "The file name of the max brightness file.";
-    pub const brightness_file_name_comment = "The file name of the current brightness file.";
+    pub const current_brightness_file_name_comment = "The file name of the current brightness file.";
 
+    pub const scroll_ticks_comment = "The number of scroll ticks to get from 0 to 100% brightness.";
+
+    pub const color_comment = "The icons's color";
     pub const background_color_comment = "The background color.";
 
     pub const padding_comment = "The general padding for each size.";
@@ -38,17 +28,17 @@ pub const BrightnessConfig = struct {
 
     pub const inner_padding_comment = "The padding between the battery and the progress_bar.";
 
-    directory: Config.Path = .{ .path = "/sys/class/power_supply/BAT0" },
+    directory: Config.Path = .{ .path = "/sys/class/backlight/intel_backlight" },
 
     max_brightness_file_name: []const u8 = "max_brightness",
-    brightness_file_name: []const u8 = "brightness",
+    current_brightness_file_name: []const u8 = "brightness",
 
     scroll_ticks: u8 = 100,
 
-    color: Color = colors.rose,
+    color: Color = colors.iris,
     background_color: Color = colors.surface,
 
-    padding: ?Size = null,
+    padding: Size = 0,
 
     padding_north: ?Size = null,
     padding_south: ?Size = null,
@@ -99,12 +89,15 @@ inner_padding_was_specified: bool,
 widget: Widget,
 
 /// Initializes the widget with the given arguments.
-pub fn init(area: Rect, config: Config) !Brightness {
-    assert(args.brightness_directory.len > 0);
+pub fn init(area: Rect, config: BrightnessConfig) !Brightness {
+    const directory = config.directory.path;
+    assert(directory.len > 0);
 
-    const brightness_directory_should_add_sep = args.brightness_directory[args.brightness_directory.len - 1] != fs.path.sep;
+    const brightness_directory_should_add_sep = directory[directory.len - 1] != fs.path.sep;
 
-    const path_length = args.brightness_directory.len + @intFromBool(brightness_directory_should_add_sep) + max_file_name;
+    const max_file_name = @max(config.max_brightness_file_name.len, config.current_brightness_file_name.len);
+
+    const path_length = directory.len + @intFromBool(brightness_directory_should_add_sep) + max_file_name;
 
     if (path_length > fs.max_path_bytes) {
         log.err("provided brightness directory makes path too long to be a valid path.", .{});
@@ -115,11 +108,11 @@ pub fn init(area: Rect, config: Config) !Brightness {
     var brightness_path = BoundedArray(u8, fs.max_path_bytes){};
 
     // base directory path
-    brightness_path.appendSliceAssumeCapacity(args.brightness_directory);
+    brightness_path.appendSliceAssumeCapacity(directory);
     if (brightness_directory_should_add_sep) brightness_path.appendAssumeCapacity(fs.path.sep);
 
     // the full file's name
-    brightness_path.appendSliceAssumeCapacity(max_brightness_file_name);
+    brightness_path.appendSliceAssumeCapacity(config.max_brightness_file_name);
 
     const max_file = fs.openFileAbsolute(brightness_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Max Brightness File with: {s}", .{@errorName(err)});
@@ -128,8 +121,8 @@ pub fn init(area: Rect, config: Config) !Brightness {
     errdefer max_file.close();
 
     // remove the full file's name, add the charge file's
-    brightness_path.len -= @intCast(max_brightness_file_name.len);
-    brightness_path.appendSliceAssumeCapacity(current_brightness_file_name);
+    brightness_path.len -= @intCast(config.max_brightness_file_name.len);
+    brightness_path.appendSliceAssumeCapacity(config.current_brightness_file_name);
 
     const current_file = fs.openFileAbsolute(brightness_path.slice(), .{ .mode = .read_write }) catch |err| {
         log.warn("Failed to open Current Brightness File with: {s}", .{@errorName(err)});
@@ -139,9 +132,9 @@ pub fn init(area: Rect, config: Config) !Brightness {
 
     // undefined fields because they will set before used on draw or the immediate setArea.
     var self = Brightness{
-        .background_color = args.background_color,
+        .background_color = config.background_color,
 
-        .brightness_color = args.brightness_color,
+        .brightness_color = config.color,
 
         .brightness_font_size = undefined,
         .brightness_width = undefined,
@@ -153,12 +146,18 @@ pub fn init(area: Rect, config: Config) !Brightness {
         .max_file = max_file,
         .current_file = current_file,
 
-        .padding = Padding.from(args),
-        // if no inner padding was specified, it will be overridden before used.
-        .inner_padding = args.inner_padding orelse undefined,
-        .inner_padding_was_specified = args.inner_padding != null,
+        .padding = .{
+            .north = config.padding_north orelse config.padding,
+            .south = config.padding_south orelse config.padding,
+            .east = config.padding_east orelse config.padding,
+            .west = config.padding_west orelse config.padding,
+        },
 
-        .scroll_ticks = args.scroll_ticks,
+        // if no inner padding was specified, it will be overridden before used.
+        .inner_padding = config.inner_padding orelse undefined,
+        .inner_padding_was_specified = config.inner_padding != null,
+
+        .scroll_ticks = config.scroll_ticks,
 
         .widget = .{
             .vtable = Widget.generateVTable(Brightness),
@@ -175,7 +174,7 @@ pub fn init(area: Rect, config: Config) !Brightness {
     };
 
     // set the area to find the progress area and everything.
-    self.setArea(args.area);
+    self.setArea(area);
 
     return self;
 }

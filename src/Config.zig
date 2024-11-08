@@ -4,7 +4,6 @@ pub const Config = @This();
 
 pub const default_text_color = "rose";
 pub const default_background_color = "surface";
-
 pub const Path = struct {
     path: []const u8,
 };
@@ -49,13 +48,8 @@ workspaces_active_background_color: if (!options.workspaces_disable) Color else 
 
 workspaces_spacing: if (!options.workspaces_disable) Size else void,
 
-battery_config: BatteryConfig,
-
-brightness_directory: if (!options.brightness_disable) []const u8 else void,
-brightness_color: if (!options.brightness_disable) Color else void,
-brightness_background_color: if (!options.brightness_disable) Color else void,
-
-scroll_ticks: if (!options.brightness_disable) u8 else void,
+battery_config: if (!options.battery_disable) BatteryConfig else void,
+brightness_config: if (!options.brightness_disable) BrightnessConfig else void,
 
 fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     var iter = std.process.ArgIterator.init();
@@ -118,7 +112,8 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
 
         .background_color = background_color,
 
-        .battery_config = createConfig(BatteryConfig, args),
+        .battery_config = if (!options.battery_disable) createConfig(BatteryConfig, args) else {},
+        .brightness_config = if (!options.brightness_disable) createConfig(BrightnessConfig, args) else {},
 
         .clock_text_color = if (!options.clock_disable) args.@"clock-text-color" orelse text_color else {},
         .clock_spacer_color = if (!options.clock_disable) args.@"clock-spacer-color" orelse colors.pine else {},
@@ -134,12 +129,6 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .workspaces_active_background_color = if (!options.workspaces_disable) args.@"workspaces-active-background-color" orelse @field(colors, default_workspaces_active_background_color) else {},
 
         .workspaces_spacing = if (!options.workspaces_disable) args.@"workspaces-spacing" orelse 0 else {},
-
-        .brightness_directory = if (!options.brightness_disable) args.@"brightness-directory" orelse default_brightness_directory else {},
-        .brightness_color = if (!options.brightness_disable) args.@"brightness-color" orelse @field(colors, default_brightness_color) else {},
-        .brightness_background_color = if (!options.brightness_disable) args.@"brightness-background-color" orelse background_color else {},
-
-        .scroll_ticks = if (!options.brightness_disable) args.@"brightness-scroll-ticks" orelse default_brightness_scoll_ticks else {},
 
         .title = args.title orelse std.mem.span(std.os.argv[0]),
     };
@@ -273,12 +262,8 @@ const help =
     \\-T, --text-color <Color>       The text color by name or by hex code (starting with '#') (default: {s})
     \\-b, --background-color <Color> The background color by name or by hex code (starting with '#') (default: {s})
     \\
-, .{ default_text_color, default_background_color }) ++ (if (!options.battery_disable) generateHelpMessageComptime(BatteryConfig) else "") ++ (if (!options.brightness_disable)
-    std.fmt.comptimePrint(
-        \\
-    , .{ default_brightness_directory, default_brightness_scoll_ticks })
-else
-    "") ++ (if (!options.clock_disable)
+, .{ default_text_color, default_background_color }) ++ (if (!options.battery_disable) generateHelpMessageComptime(BatteryConfig) else "") ++ (if (!options.brightness_disable) generateHelpMessageComptime(BrightnessConfig) else "") ++
+    (if (!options.clock_disable)
     \\    --clock-text-color <Color>       The text color of the clock's numbers (default: text-color)
     \\    --clock-spacer-color <Color>     The text color of the clock's spacers (default: PINE)
     \\    --clock-background-color <Color> The background color of the clock (default: background-color)
@@ -394,9 +379,7 @@ const Battery = @import("Battery.zig");
 const BatteryConfig = Battery.BatteryConfig;
 
 const Brightness = @import("Brightness.zig");
-const default_brightness_directory = Brightness.default_brightness_directory;
-const default_brightness_scoll_ticks = Brightness.default_brightness_scoll_ticks;
-const default_brightness_color = Brightness.default_brightness_color;
+const BrightnessConfig = Brightness.BrightnessConfig;
 
 const Workspaces = @import("workspaces/Workspaces.zig");
 const default_workspaces_hover_text_color = Workspaces.default_workspaces_hover_text_color;
