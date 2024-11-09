@@ -67,6 +67,9 @@ max_file: fs.File,
 /// File for the current brightness
 current_file: fs.File,
 
+/// whether or not the current_file was opened as writeable.
+current_file_writeable: bool,
+
 /// The font size of the brightness symbol.
 /// Should always be up to date with the area.
 brightness_font_size: Size,
@@ -124,9 +127,23 @@ pub fn init(area: Rect, config: BrightnessConfig) !Brightness {
     brightness_path.len -= @intCast(config.max_brightness_file_name.len);
     brightness_path.appendSliceAssumeCapacity(config.current_brightness_file_name);
 
-    const current_file = fs.openFileAbsolute(brightness_path.slice(), .{ .mode = .read_write }) catch |err| {
-        log.warn("Failed to open Current Brightness File with: {s}", .{@errorName(err)});
-        return error.CurrentFileError;
+    var current_file_writeable = true;
+    const current_file = fs.openFileAbsolute(brightness_path.slice(), .{ .mode = .read_write }) catch |rw_err| current_file: {
+        switch (rw_err) {
+            error.AccessDenied => {
+                // try to open file without write permissions
+                const file = fs.openFileAbsolute(brightness_path.slice(), .{ .mode = .read_only }) catch |read_err| {
+                    log.warn("Failed to open Current Brightness File with: {s}", .{@errorName(read_err)});
+                    return error.CurrentFileError;
+                };
+                current_file_writeable = false;
+                break :current_file file;
+            },
+            else => {
+                log.warn("Failed to open Current Brightness File with: {s}", .{@errorName(rw_err)});
+                return error.CurrentFileError;
+            },
+        }
     };
     errdefer current_file.close();
 
@@ -145,6 +162,7 @@ pub fn init(area: Rect, config: BrightnessConfig) !Brightness {
 
         .max_file = max_file,
         .current_file = current_file,
+        .current_file_writeable = current_file_writeable,
 
         .padding = .{
             .north = config.padding_north orelse config.padding,
@@ -515,6 +533,8 @@ pub fn getWidth(self: *Brightness) Size {
 
 pub fn scroll(self: *const Brightness, axis: Axis, discrete: i32) void {
     if (axis != .vertical_scroll) return;
+    // if you cannot write to the file to set it, don't even calculate it.
+    if (!self.current_file_writeable) return;
 
     var brightness_max = readFileInt(u32, self.max_file) catch |err| {
         log.warn("Failed to set brightness. Could not get max brightness with error: {s}", .{@errorName(err)});
