@@ -30,18 +30,18 @@ clap_res: clap.Result(clap.Help, &params, parsers), // general things
 program_name: []const u8,
 
 // params
-width: ?u16,
-height: u16,
+width: ?u16 = null,
+height: u16 = default_window_height,
 
-title: []const u8,
+title: []const u8 = "walrus-bar",
 
-text_color: Color,
-background_color: Color,
+text_color: Color = default_text_color,
+background_color: Color = default_background_color,
 
-clock_config: if (options.clock_enabled) ClockConfig else void,
-battery_config: if (options.battery_enabled) BatteryConfig else void,
-brightness_config: if (options.brightness_enabled) BrightnessConfig else void,
-workspaces_config: if (options.workspaces_enabled) WorkspacesConfig else void,
+clock: if (options.clock_enabled) ClockConfig else void,
+battery: if (options.battery_enabled) BatteryConfig else void,
+brightness: if (options.brightness_enabled) BrightnessConfig else void,
+workspaces: if (options.workspaces_enabled) WorkspacesConfig else void,
 
 fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     var iter = std.process.ArgIterator.init();
@@ -92,26 +92,91 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         exit(1);
     }
 
-    const text_color = args.@"text-color" orelse default_text_color;
-    const background_color = args.@"background-color" orelse default_background_color;
-
-    return Config{
+    var config = Config{
         .clap_res = res,
         .program_name = program_name,
 
-        .width = args.width,
-        .height = args.height orelse default_window_height,
-
-        .text_color = text_color,
-        .background_color = background_color,
-
-        .battery_config = if (options.battery_enabled) createConfig(BatteryConfig, args) else {},
-        .brightness_config = if (options.brightness_enabled) createConfig(BrightnessConfig, args) else {},
-        .clock_config = if (options.clock_enabled) createConfig(ClockConfig, args) else {},
-        .workspaces_config = if (options.workspaces_enabled) createConfig(WorkspacesConfig, args) else {},
-
-        .title = args.title orelse std.mem.span(std.os.argv[0]),
+        .battery = .{},
+        .brightness = .{},
+        .clock = .{},
+        .workspaces = .{},
     };
+
+    ini_config: {
+        const default_config_path = getDefaultConfigPath();
+
+        const specified_config_file = if (args.@"config-file") |config_path| specified_config_path: {
+            assert(fs.path.isAbsolute(config_path));
+            break :specified_config_path config_path;
+        } else null;
+
+        const config_path = specified_config_file orelse
+            if (default_config_path) |cp| cp.constSlice() else break :ini_config;
+
+        assert(fs.path.isAbsolute(config_path));
+
+        const config_file = fs.openFileAbsolute(config_path, .{}) catch |err| {
+            switch (err) {
+                error.FileNotFound => log.warn("Config not found at `{s}`", .{config_path}),
+                else => log.warn("Failed to open configuration at `{s}` with: {s}", .{ config_path, @errorName(err) }),
+            }
+            break :ini_config;
+        };
+
+        parseIni(Config, &config, config_file) catch |err| {
+            log.warn("Failed to parse config with: {s}", .{@errorName(err)});
+            break :ini_config;
+        };
+    }
+
+    if (args.width) |width| config.width = width;
+    if (args.height) |height| config.height = height;
+    if (args.@"text-color") |text_color| config.text_color = text_color;
+    if (args.@"background-color") |background_color| config.background_color = background_color;
+    if (args.title) |title| config.title = title;
+
+    createConfig(BatteryConfig, args, &config.battery);
+    createConfig(BrightnessConfig, args, &config.brightness);
+    createConfig(ClockConfig, args, &config.clock);
+    createConfig(WorkspacesConfig, args, &config.workspaces);
+
+    return config;
+}
+
+pub fn getDefaultConfigPath() ?BoundedArray(u8, max_path_bytes) {
+    const xdg_config_home = posix.getenvZ("XDG_CONFIG_HOME") orelse {
+        log.warn("environment variable XDG_CONFIG_HOME not found!", .{});
+        return null;
+    };
+
+    if (!fs.path.isAbsolute(xdg_config_home)) {
+        log.warn("environment variable XDG_CONFIG_HOME isn't a absolute path!", .{});
+        return null;
+    }
+
+    const from_config_home = "/walrus-bar/config.ini";
+
+    if (xdg_config_home.len > max_path_bytes - from_config_home.len) return null;
+
+    var path: BoundedArray(u8, max_path_bytes) = .{};
+
+    path.appendSliceAssumeCapacity(xdg_config_home);
+    path.appendSliceAssumeCapacity(from_config_home);
+
+    assert(fs.path.isAbsolute(path.constSlice()));
+
+    return path;
+}
+
+pub const ParseIniError = error{};
+
+pub fn parseIni(T: type, config: *T, file: fs.File) ParseIniError!void {
+    const config_data = posix.mmap(null, 0, posix.PROT.READ, .{
+        .NONBLOCK = true,
+    }, file, 0);
+    defer posix.munmap(config_data);
+
+    _ = config;
 }
 
 fn getArgName(comptime T: type, name: []const u8) []const u8 {
@@ -140,11 +205,9 @@ fn getArgName(comptime T: type, name: []const u8) []const u8 {
 }
 
 /// Gets all the config options from the clap config
-pub fn createConfig(comptime T: type, args: anytype) T {
+pub fn createConfig(comptime T: type, args: anytype, out: *T) void {
     assert(@typeInfo(T) == .Struct);
     const type_info = @typeInfo(T).Struct;
-
-    var out: T = .{};
 
     inline for (type_info.fields) |field| {
         const arg_name = comptime getArgName(T, field.name);
@@ -152,16 +215,13 @@ pub fn createConfig(comptime T: type, args: anytype) T {
         const arg_type = @TypeOf(@field(out, field.name));
 
         // place transient configs here, like background and text colors.
+        const value = inline for (.{
+            "background_color",
+            "text_color",
+        }) |name| {
 
-        inline for (.{
-            .{ "background_color", Color, default_background_color },
-            .{ "text_color", Color, default_text_color },
-        }) |loop| {
-            const name, const ttype, const default = loop;
-
+            // check if it is a transient field
             if (comptime ascii.eqlIgnoreCase(field.name, name)) {
-                if (field.type != ttype) @compileError(name ++ " field isn't a " ++ @typeName(ttype) ++ "! type: " ++ @typeName(field.type));
-
                 const transient_arg_name = comptime transient_arg_name: {
                     var tan = name.*;
 
@@ -170,25 +230,31 @@ pub fn createConfig(comptime T: type, args: anytype) T {
                     break :transient_arg_name &tan;
                 };
 
-                @field(out, field.name) = @field(args, arg_name) orelse @field(args, transient_arg_name) orelse default;
+                const transient_type = @typeInfo(@TypeOf(@field(args, transient_arg_name))).Optional.child;
+                if (field.type != transient_type) @compileError("transient field " ++ name ++ " isn't a " ++ @typeName(transient_type) ++ "! type: " ++ @typeName(field.type));
 
-                break;
+                // if that field was configured, use that
+                if (@field(args, arg_name)) |specified_arg|
+                    break specified_arg;
+                if (@field(args, transient_arg_name)) |transient_specified_field|
+                    break transient_specified_field;
             }
-        } else if (@field(args, arg_name)) |value| {
+            // otherwise, find the widget-specific config
+        } else if (@field(args, arg_name)) |specified_arg| specified_arg else null;
+
+        if (value) |v| {
             @field(out, field.name) = switch (arg_type) {
-                Path => .{ .path = value },
-                else => value,
+                Path => .{ .path = v },
+                else => v,
             };
         }
     }
-
-    return out;
 }
 
 pub fn resolveTypeName(comptime T: type) []const u8 {
-    const tt = if (@typeInfo(T) == .Optional) @typeInfo(T).Optional.child else T;
+    const TInner = if (@typeInfo(T) == .Optional) @typeInfo(T).Optional.child else T;
 
-    return switch (tt) {
+    return switch (TInner) {
         Path => "Path",
         []const u8 => "String",
         u21 => "Character",
@@ -259,9 +325,10 @@ const help =
     \\-h, --help                     Display this message and exit.
     \\    --dependencies             Print a list of the dependencies and versions and exit.
     \\    --colors                   Print a list of all the named colors and exit.
-    \\-w, --width <Size>              The window's width (minimum: {}) (full screen width if not specified)
-    \\-l, --height <Size>             The window's height (minimum: {}) (default: {})
-    \\-t, --title <String>              The window's title (default: OS Process Name (likely 'walrus-bar'))
+    \\    --config-file <Path>       The path to the config file (default: "$XDG_CONFIG_HOME/walrus-bar/config.ini")
+    \\-w, --width <Size>             The window's width (minimum: {}) (full screen width if not specified)
+    \\-l, --height <Size>            The window's height (minimum: {}) (default: {})
+    \\-t, --title <String>           The window's title (default: OS Process Name (likely 'walrus-bar'))
     \\
     \\--text-color <Color>       The default text colors (default: {s})
     \\--background-color <Color> The default background color (default: {s})
@@ -409,13 +476,7 @@ const options = @import("options");
 const ClockConfig = @import("Clock.zig").ClockConfig;
 const BatteryConfig = @import("Battery.zig").BatteryConfig;
 const BrightnessConfig = @import("Brightness.zig").BrightnessConfig;
-
 const WorkspacesConfig = @import("workspaces/Workspaces.zig").WorkspacesConfig;
-//const default_workspaces_hover_text_color = Workspaces.default_workspaces_hover_text_color;
-//const default_workspaces_hover_background_color = Workspaces.default_workspaces_hover_background_color;
-//const default_workspaces_active_text_color = Workspaces.default_workspaces_active_text_color;
-//const default_workspaces_active_background_color = Workspaces.default_workspaces_active_background_color;
-//const default_workspaces_spacing = Workspaces.default_workspaces_spacing;
 
 const colors = @import("colors.zig");
 const Color = colors.Color;
@@ -426,9 +487,12 @@ const constants = @import("constants.zig");
 const drawing = @import("drawing.zig");
 const Size = drawing.Size;
 
+const clap = @import("clap");
+
 const builtin = @import("builtin");
 const std = @import("std");
 const unicode = std.unicode;
+const posix = std.posix;
 const ascii = std.ascii;
 const mem = std.mem;
 const fs = std.fs;
@@ -436,7 +500,9 @@ const fs = std.fs;
 const assert = std.debug.assert;
 const print = std.debug.print;
 const exit = std.process.exit;
+const max_path_bytes = std.fs.max_path_bytes;
 
 const Allocator = std.mem.Allocator;
+const BoundedArray = std.BoundedArray;
 
-const clap = @import("clap");
+const log = std.log.scoped(.Config);

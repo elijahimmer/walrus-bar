@@ -126,7 +126,7 @@ pub fn init(area: Rect) RootContainer {
                 .width = 1000,
                 .height = area.height,
             },
-            config.clock_config,
+            config.clock,
         );
 
         var center_area = clock.widget.area;
@@ -145,7 +145,7 @@ pub fn init(area: Rect) RootContainer {
                 .width = 1000,
                 .height = area.height,
             },
-            config.workspaces_config,
+            config.workspaces,
         ) catch |err| {
             log.warn("Failed to initialize Workspace with: {s}", .{@errorName(err)});
             break :workspaces;
@@ -165,7 +165,7 @@ pub fn init(area: Rect) RootContainer {
             .y = 0,
             .width = 1000,
             .height = area.height,
-        }, config.battery_config) catch |err| {
+        }, config.battery) catch |err| {
             log.warn("Failed to initalized Battery with: {s}", .{@errorName(err)});
             break :battery;
         };
@@ -188,7 +188,7 @@ pub fn init(area: Rect) RootContainer {
             .y = 0,
             .width = 1000,
             .height = area.height,
-        }, config.brightness_config) catch |err| {
+        }, config.brightness) catch |err| {
             log.warn("Failed to initalized Brightness with: {s}", .{@errorName(err)});
             break :brightness;
         };
