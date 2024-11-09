@@ -1,8 +1,9 @@
 //! This holds the entire context of the Wayland connection
-//! The names are only valid when the ptr assosiated is not null.
+//! The names are only valid when the pointer associated is not null.
 
 pub const WaylandContext = @This();
 pub const OutputsArray = ArrayListUnmanaged(DrawContext);
+pub const DefaultOutputArraySize: usize = 2;
 
 /// The Wayland connection itself.
 display: *wl.Display,
@@ -41,7 +42,10 @@ seat: ?*wl.Seat = null,
 /// only valid when `seat` is not null.
 seat_name: u32 = undefined,
 
+/// The cursor manager that lets you set the cursor shape.
 cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
+
+/// only valid when `cursor_shape_manager` is not null
 cursor_shape_manager_name: u32 = undefined,
 
 /// A pointer device.
@@ -54,6 +58,28 @@ last_motion_surface: ?*DrawContext = null,
 
 /// Whether or not the program should still be running.
 running: bool = true,
+
+pub const InitError = Allocator.Error || error{ ConnectFailed, RoundtripFailed };
+
+pub fn init(wayland_context: *WaylandContext, allocator: Allocator) InitError!void {
+    // start wayland connection.
+    const display = try wl.Display.connect(null);
+    var registry = try display.getRegistry();
+
+    wayland_context.* = WaylandContext{
+        .display = display,
+        .registry = registry,
+        .allocator = allocator,
+
+        .outputs = try OutputsArray.initCapacity(allocator, DefaultOutputArraySize),
+    };
+
+    // set registry to set values in wayland_context
+    registry.setListener(*WaylandContext, registryListener, wayland_context);
+
+    // populate initial registry
+    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
+}
 
 /// de-initialize the Wayland context and clean up all the Wayland objects.
 pub fn deinit(self: *WaylandContext) void {
@@ -155,7 +181,8 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                     log_local.debug("Output '{s}' was removed", .{output_context.name});
                     draw_context.deinit(context.allocator);
 
-                    _ = context.outputs.swapRemove(idx);
+                    const ctx = context.outputs.swapRemove(idx);
+                    assert(ctx.output_context.id == output_context.id);
 
                     return;
                 }

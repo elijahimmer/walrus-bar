@@ -1,5 +1,3 @@
-pub const DefaultOutputArraySize: usize = 2;
-
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{
         .thread_safe = false, // we should only ever use it on the main (wayland) thread.
@@ -15,29 +13,15 @@ pub fn main() !void {
     try FreeTypeContext.init_global(gpa.allocator());
     defer FreeTypeContext.global.deinit();
 
-    // start wayland connection.
-    const display = try wl.Display.connect(null);
-    var registry = try display.getRegistry();
-
     // initialize the app's context.
-    var wayland_context = WaylandContext{
-        .display = display,
-        .registry = registry,
-        .allocator = allocator,
+    var wayland_context: WaylandContext = undefined;
 
-        .outputs = try WaylandContext.OutputsArray.initCapacity(allocator, DefaultOutputArraySize),
-    };
+    try WaylandContext.init(&wayland_context, allocator);
     defer wayland_context.deinit();
-
-    // set registry to set values in wayland_context
-    registry.setListener(*WaylandContext, WaylandContext.registryListener, &wayland_context);
-
-    // populate initial registry
-    if (display.roundtrip() != .SUCCESS) return error.RoundtripFailed;
 
     while (wayland_context.running) {
         // dispatch and handle all messages to and fro.
-        switch (display.dispatch()) {
+        switch (wayland_context.display.dispatch()) {
             .SUCCESS => {},
             .INVAL => {
                 // we sent a invalid response (which is a bug) and should just stop
@@ -61,6 +45,7 @@ test {
     std.testing.refAllDecls(@import("workspaces/testing.zig"));
     std.testing.refAllDecls(@import("workspaces/none.zig"));
     std.testing.refAllDecls(@import("RootContainer.zig"));
+    std.testing.refAllDecls(@import("Brightness.zig"));
     std.testing.refAllDecls(@import("TextBox.zig"));
     std.testing.refAllDecls(@import("Battery.zig"));
     std.testing.refAllDecls(@import("Clock.zig"));
@@ -80,7 +65,6 @@ const DrawContext = @import("DrawContext.zig");
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
-const zwlr = wayland.client.zwlr;
 
 const Config = @import("Config.zig");
 
@@ -93,4 +77,5 @@ const std = @import("std");
 const assert = std.debug.assert;
 const maxInt = std.math.maxInt;
 const panic = std.debug.panic;
+
 const log = std.log.scoped(.@"walrus-bar");
