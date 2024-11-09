@@ -360,8 +360,6 @@ pub const Circle = struct {
         };
     }
 
-    // TODO: Implement circle drawing
-
     pub fn drawOutline(self: Circle, draw_context: *const DrawContext, color: Color) void {
         var t1: Size = self.r / 16;
         var x: Size = self.r;

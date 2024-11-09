@@ -7,8 +7,9 @@ pub const WAYLAND_ZWLR_ANCHOR: zwlr.LayerSurfaceV1.Anchor = .{
     .right = true,
 };
 
-// If the window is too small, some stuff won't work.
+pub const DEFAULT_WINDOW_HEIGHT = 28;
 pub const MINIMUM_WINDOW_HEIGHT = 15;
+pub const MINIMUM_WINDOW_WIDTH = 500;
 
 pub const version_str = versions.version;
 pub const version = SemanticVersion.parse(versions.version) catch unreachable;

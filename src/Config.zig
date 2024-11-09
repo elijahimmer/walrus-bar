@@ -4,6 +4,10 @@ pub const Config = @This();
 
 pub const default_text_color = colors.rose;
 pub const default_background_color = colors.surface;
+pub const default_window_height = 28;
+pub const minimum_window_height = 15;
+pub const minimum_window_width = 500;
+
 pub const Path = struct {
     path: []const u8,
 };
@@ -96,7 +100,7 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .program_name = program_name,
 
         .width = args.width,
-        .height = args.height orelse 28,
+        .height = args.height orelse default_window_height,
 
         .text_color = text_color,
         .background_color = background_color,
@@ -255,14 +259,14 @@ const help =
     \\-h, --help                     Display this message and exit.
     \\    --dependencies             Print a list of the dependencies and versions and exit.
     \\    --colors                   Print a list of all the named colors and exit.
-    \\-w, --width <Size>              The window's width (full screen if not specified)
-    \\-l, --height <Size>             The window's height (minimum: 15) (default: 28)
+    \\-w, --width <Size>              The window's width (minimum: {}) (full screen width if not specified)
+    \\-l, --height <Size>             The window's height (minimum: {}) (default: {})
     \\-t, --title <String>              The window's title (default: OS Process Name (likely 'walrus-bar'))
     \\
     \\--text-color <Color>       The default text colors (default: {s})
     \\--background-color <Color> The default background color (default: {s})
     \\
-, .{ colors.comptimeColorToString(default_text_color), colors.comptimeColorToString(default_background_color) }) ++
+, .{ minimum_window_width, minimum_window_height, default_window_height, colors.comptimeColorToString(default_text_color), colors.comptimeColorToString(default_background_color) }) ++
     (if (options.clock_enabled) generateHelpMessageComptime(ClockConfig) else "") ++
     (if (options.battery_enabled) generateHelpMessageComptime(BatteryConfig) else "") ++
     (if (options.brightness_enabled) generateHelpMessageComptime(BrightnessConfig) else "") ++
@@ -283,7 +287,7 @@ const help_message_prelude = std.fmt.comptimePrint(
     \\Walrus-Bar v{s}
     \\   Source Repo: https://github.com/elijahimmer/walrus-bar
     \\   Types:
-    \\      - Color: A color by name (for list try `--colors`) or by hex code (starting with '#')
+    \\      - Color: A color by name (`--colors` to get options) or by hex code (starting with '#')
     \\      - String: A string of valid UTF-8 characters
     \\      - Character: A single valid UTF-8 character (can be multiple bytes)
     \\      - Path: A valid absolute file system path

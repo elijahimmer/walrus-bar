@@ -219,14 +219,14 @@ pub fn comptimeColorToString(comptime color: Color) []const u8 {
 pub const all_colors = struct {
     // TODO: Add more colors here.
     pub const clear: Color = @bitCast(@as(u32, 0));
-    pub const white: Color = @bitCast(@as(u32, 0xCFD3CB));
-    pub const black: Color = @bitCast(@as(u32, 0x030501));
-    pub const red: Color = @bitCast(@as(u32, 0xCA0202));
-    pub const green: Color = @bitCast(@as(u32, 0x4D9706));
-    pub const yellow: Color = @bitCast(@as(u32, 0xC49D00));
-    pub const blue: Color = @bitCast(@as(u32, 0x709FCE));
-    pub const magenta: Color = @bitCast(@as(u32, 0x75527D));
-    pub const cyan: Color = @bitCast(@as(u32, 0x0A999B));
+    pub const white: Color = @bitCast(@as(u32, 0xFFCFD3CB));
+    pub const black: Color = @bitCast(@as(u32, 0xFF030501));
+    pub const red: Color = @bitCast(@as(u32, 0xFFCA0202));
+    pub const green: Color = @bitCast(@as(u32, 0xFF4D9706));
+    pub const yellow: Color = @bitCast(@as(u32, 0xFFC49D00));
+    pub const blue: Color = @bitCast(@as(u32, 0xFF709FCE));
+    pub const magenta: Color = @bitCast(@as(u32, 0xFF75527D));
+    pub const cyan: Color = @bitCast(@as(u32, 0xFF0A999B));
 
     pub const main: Color = @bitCast(@as(u32, 0xFF191724));
     pub const surface: Color = @bitCast(@as(u32, 0xFF1f1d2e));
@@ -248,6 +248,7 @@ pub usingnamespace all_colors;
 pub const color_aliases = struct {
     pub const damage: Color = all_colors.love;
     pub const border: Color = all_colors.foam;
+    pub const none: Color = all_colors.clear;
 };
 pub usingnamespace color_aliases;
 

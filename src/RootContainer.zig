@@ -161,7 +161,7 @@ pub fn init(area: Rect) RootContainer {
 
     if (options.battery_enabled) battery: {
         var battery = Battery.init(.{
-            .x = area.width - 1000,
+            .x = 0,
             .y = 0,
             .width = 1000,
             .height = area.height,
@@ -183,10 +183,8 @@ pub fn init(area: Rect) RootContainer {
     }
 
     if (options.brightness_enabled) brightness: {
-        const x_pos = if (options.battery_enabled and root_container.battery != null) root_container.battery.?.widget.area.x - 1000 else root_container.area.width - 1000;
-
         var brightness = Brightness.init(.{
-            .x = x_pos,
+            .x = 0,
             .y = 0,
             .width = 1000,
             .height = area.height,
@@ -195,9 +193,14 @@ pub fn init(area: Rect) RootContainer {
             break :brightness;
         };
 
+        const x_pos = if (options.battery_enabled and root_container.battery != null)
+            root_container.battery.?.widget.area.x
+        else
+            root_container.area.width;
+
         var right_area = brightness.widget.area;
         right_area.width = brightness.getWidth();
-        right_area.x = x_pos + 1000 - right_area.width;
+        right_area.x = x_pos - right_area.width;
 
         brightness.widget.setArea(right_area);
         log.debug("brightness: area: {}, {}", .{ brightness.widget.area, brightness.progress_area });
