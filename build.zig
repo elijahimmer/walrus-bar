@@ -118,14 +118,21 @@ pub fn build(b: *std.Build) void {
 
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
 
-    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml"); // needed by wlr-layer-shell
-    scanner.addSystemProtocol("wlr/unstable/wlr-layer-shell-unstable-v1.xml");
-
     scanner.generate("wl_compositor", 6);
     scanner.generate("wl_seat", 9);
     scanner.generate("wl_shm", 1);
     scanner.generate("wl_output", 4);
+
+    scanner.addSystemProtocol("stable/tablet/tablet-v2.xml"); // needed for cursor-shape-v1
+    scanner.generate("zwp_tablet_manager_v2", 1);
+
+    scanner.addSystemProtocol("staging/cursor-shape/cursor-shape-v1.xml");
+    scanner.generate("wp_cursor_shape_manager_v1", 1);
+
+    scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml"); // needed by wlr-layer-shell
     //scanner.generate("xdg_wm_base", 2);
+
+    scanner.addSystemProtocol("wlr/unstable/wlr-layer-shell-unstable-v1.xml");
     scanner.generate("zwlr_layer_shell_v1", 4);
 
     inline for (.{ exe, exe_unit_tests }) |l| {

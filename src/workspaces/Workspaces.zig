@@ -1,5 +1,6 @@
 //! The widget frontend for whatever workspaces provider
 //! is running, (if any).
+//! TODO: Make workspaces with less max workspaces than max_workspace_count work
 
 pub const Workspaces = @This();
 

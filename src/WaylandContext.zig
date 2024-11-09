@@ -41,6 +41,9 @@ seat: ?*wl.Seat = null,
 /// only valid when `seat` is not null.
 seat_name: u32 = undefined,
 
+cursor_shape_manager: ?*wp.CursorShapeManagerV1 = null,
+cursor_shape_manager_name: u32 = undefined,
+
 /// A pointer device.
 /// TODO: See if we need to store a list here.
 pointer: ?*wl.Pointer = null,
@@ -97,6 +100,7 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
         .{ wl.Compositor, "compositor" },
         .{ wl.Shm, "shm" },
         .{ zwlr.LayerShellV1, "layer_shell" },
+        .{ wp.CursorShapeManagerV1, "cursor_shape_manager" },
     };
 
     switch (event) {
@@ -196,6 +200,7 @@ const config = &@import("Config.zig").global;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
+const wp = wayland.client.wp;
 const zwlr = wayland.client.zwlr;
 
 const std = @import("std");

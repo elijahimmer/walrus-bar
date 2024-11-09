@@ -102,7 +102,7 @@ fn initializeShm(draw_context: *DrawContext, wayland_context: *WaylandContext) I
     assert(draw_context.output_context.height >= draw_context.window_area.height);
     assert(draw_context.surface != null);
 
-    const width = draw_context.output_context.width;
+    const width = config.width orelse draw_context.output_context.width;
     const height = config.height;
     const stride = @as(u31, width) * @sizeOf(Color);
 
@@ -122,10 +122,9 @@ fn initializeShm(draw_context: *DrawContext, wayland_context: *WaylandContext) I
     var screen_adjusted: []Color = undefined;
     screen_adjusted.ptr = @ptrCast(screen.ptr);
     screen_adjusted.len = @as(usize, height) * width;
+    assert(screen_adjusted.len * @sizeOf(Color) == screen.len);
 
     draw_context.screen = screen_adjusted;
-
-    //@memset(screen_adjusted, config.background_color);
 
     const shm_pool = try wayland_context.shm.?.createPool(fd, size);
 
@@ -174,8 +173,8 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
         @panic("resizing output unimplemented");
     }
 
-    assert(draw_context.layer_surface != null);
     assert(draw_context.shm_buffer != null);
+    assert(draw_context.surface != null);
     assert(draw_context.shm_fd != null);
 
     if (draw_context.root_container) |*rc| rc.deinit();

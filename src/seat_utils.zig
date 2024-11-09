@@ -50,6 +50,18 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                     .y = @intCast(@max(enter.surface_y.toInt(), 0)),
                 };
 
+                if (wayland_context.cursor_shape_manager) |cursor_shape_manager| set_pointer: {
+                    const pointer_device = wp.CursorShapeManagerV1.getPointer(
+                        cursor_shape_manager,
+                        pointer,
+                    ) catch |err| {
+                        log.warn("Failed to get pointer device for surface '{s}' with: {s}", .{ draw_context.output_context.name, @errorName(err) });
+                        break :set_pointer;
+                    };
+                    defer pointer_device.destroy();
+                    pointer_device.setShape(enter.serial, .default);
+                }
+
                 root_container.area.assertContainsPoint(point);
                 root_container.motion(point);
             } else {
@@ -66,8 +78,9 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                     .y = @intCast(@max(motion.surface_y.toInt(), 0)),
                 };
 
-                root_container.area.assertContainsPoint(point);
-                root_container.motion(point);
+                if (root_container.area.containsPoint(point)) {
+                    root_container.motion(point);
+                }
             } else {
                 log_local.warn("Cursor motion but not on a surface?", .{});
             }
@@ -144,6 +157,7 @@ const Point = drawing.Point;
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
+const wp = wayland.client.wp;
 const zwlr = wayland.client.zwlr;
 
 const builtin = @import("builtin");

@@ -1,5 +1,4 @@
 //! A Brightness widget poll the screen and display the brightness.
-//! TODO: Add scrolling to set brightness.
 
 pub const Brightness = @This();
 
@@ -218,16 +217,19 @@ pub fn draw(self: *Brightness, draw_context: *DrawContext) !void {
 
     const area_after_padding = self.widget.area.removePadding(self.padding) orelse return;
 
-    var brightness_capacity = try readFileInt(u32, self.max_file);
+    var brightness_max = readFileInt(u32, self.max_file) catch |err| {
+        log.warn("Failed to read Brightness Capacity", .{});
+        return err;
+    };
     // if the charge is greater than capacity, saturate it.
-    const brightness_charge = @min(try readFileInt(u32, self.current_file), brightness_capacity);
+    const brightness_now = @min(try readFileInt(u32, self.current_file), brightness_max);
 
     // avoid divide by zero.
     // Do it after the brightness_charge so if capacity is zero, it will show the brightness as empty
-    brightness_capacity = @max(brightness_capacity, 1);
+    brightness_max = @max(brightness_max, 1);
 
     // a ratio of how full over maxInt(u8)
-    const fill_ratio: u8 = @intCast(@as(u64, maxInt(u8)) * brightness_charge / brightness_capacity);
+    const fill_ratio: u8 = @intCast(@as(u64, maxInt(u8)) * brightness_now / brightness_max);
 
     // if the widget should to redraw
     const should_redraw = draw_context.full_redraw or self.widget.full_redraw;
@@ -255,7 +257,7 @@ pub fn draw(self: *Brightness, draw_context: *DrawContext) !void {
     area_after_padding.assertContainsCircle(progress_circle);
     assert(meta.eql(progress_circle.boundingBox(), progress_area));
 
-    const new_fill_pixels: Size = @intCast(@as(u64, brightness_charge) * progress_area.width / brightness_capacity);
+    const new_fill_pixels: Size = @intCast(@as(u64, brightness_now) * progress_area.width / brightness_max);
     assert(new_fill_pixels <= progress_area.width);
     defer self.fill_pixels = new_fill_pixels;
 
