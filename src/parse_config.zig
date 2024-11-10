@@ -42,15 +42,25 @@ pub fn parseConfig(T: type, config: *T, file: fs.File) ParseConfigError!void {
 
         switch (option) {
             .section_start => |section_start| section_header = section_start,
-            .setting => |setting| setOption(T, config, setting),
+            .setting => |setting| setOption(config, setting),
             .none => {},
         }
     }
 }
 
-pub fn setOption(comptime T: type, config: *T, setting: Setting) void {
-    _ = config;
-    _ = setting;
+pub fn setOption(config: anytype, setting: Setting) void {
+    comptime assert(@typeInfo(@TypeOf(config)) == .Pointer);
+    const ptr_child = @typeInfo(@TypeOf(config)).Pointer.child;
+
+    comptime assert(@typeInfo(ptr_child) == .Struct);
+    const type_info = @typeInfo(ptr_child).Struct;
+
+    inline for (type_info.fields) |field| {
+        if (ascii.eqlIgnoreCase(field.name, setting.name)) {
+            @compileLog(field.name);
+            @field(config, field.name) = setting.value;
+        }
+    }
 }
 
 const ParseLineError = error{

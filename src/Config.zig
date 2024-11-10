@@ -26,18 +26,20 @@ pub fn deinit_global() void {
     global = undefined;
 }
 
+pub const General = struct {
+    width: ?u16 = null,
+    height: u16 = default_window_height,
+
+    title: []const u8 = "walrus-bar",
+
+    text_color: Color = default_text_color,
+    background_color: Color = default_background_color,
+};
+
 clap_res: clap.Result(clap.Help, &params, parsers), // general things
 program_name: []const u8,
 
-// params
-width: ?u16 = null,
-height: u16 = default_window_height,
-
-title: []const u8 = "walrus-bar",
-
-text_color: Color = default_text_color,
-background_color: Color = default_background_color,
-
+general: General,
 clock: if (options.clock_enabled) ClockConfig else void,
 battery: if (options.battery_enabled) BatteryConfig else void,
 brightness: if (options.brightness_enabled) BrightnessConfig else void,
@@ -96,6 +98,7 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         .clap_res = res,
         .program_name = program_name,
 
+        .general = .{},
         .battery = .{},
         .brightness = .{},
         .clock = .{},
