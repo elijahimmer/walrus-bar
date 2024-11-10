@@ -122,8 +122,9 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
             }
             break :ini_config;
         };
+        defer config_file.close();
 
-        parseIni(Config, &config, config_file) catch |err| {
+        parseConfig(Config, &config, config_file) catch |err| {
             log.warn("Failed to parse config with: {s}", .{@errorName(err)});
             break :ini_config;
         };
@@ -166,17 +167,6 @@ pub fn getDefaultConfigPath() ?BoundedArray(u8, max_path_bytes) {
     assert(fs.path.isAbsolute(path.constSlice()));
 
     return path;
-}
-
-pub const ParseIniError = error{};
-
-pub fn parseIni(T: type, config: *T, file: fs.File) ParseIniError!void {
-    const config_data = posix.mmap(null, 0, posix.PROT.READ, .{
-        .NONBLOCK = true,
-    }, file, 0);
-    defer posix.munmap(config_data);
-
-    _ = config;
 }
 
 fn getArgName(comptime T: type, name: []const u8) []const u8 {
@@ -486,6 +476,9 @@ const constants = @import("constants.zig");
 
 const drawing = @import("drawing.zig");
 const Size = drawing.Size;
+
+const parse_config = @import("parse_config.zig");
+const parseConfig = parse_config.parseConfig;
 
 const clap = @import("clap");
 
