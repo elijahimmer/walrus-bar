@@ -41,6 +41,16 @@ zig build --release=safe
 I recommend compiling with `--release=safe`, but you can also do `--release=fast` or `--release=small`
 to optimize for speed and binary size respectively.
 
+## Configuration
+Every option is available via the CLI args, but that can get annoying so you can also specify a configuration file.
+By default, it looks for the file at `$XDG_CONFIG_HOME/.config/walrus-bar/config.ini`, but the path
+can be specified by the `--config-file=PATH` CLI argument.
+
+For options try `walrus-bar --help`
+
+Any widgets that don't get compiled in won't appear in the `--help` menu, nor will it be checked
+in the config file. You may see warning saying a setting is not found if the widget is disabled, which you can ignore.
+
 ## Performance
 As of 0.1.4, the slowest part of this is the overhead of the Wayland connections,
 but multiple outputs and HI-DPI outputs have yet to be thoroughly tested.
