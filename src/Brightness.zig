@@ -28,7 +28,7 @@ pub const BrightnessConfig = struct {
 
     pub const inner_padding_comment = "The padding between the battery and the progress_bar.";
 
-    directory: Config.Path = .{ .path = "/sys/class/backlight/intel_backlight" },
+    directory: Config.Path = Config.Path.fromSlice("/sys/class/backlight/intel_backlight") catch unreachable,
 
     max_brightness_file_name: []const u8 = "max_brightness",
     current_brightness_file_name: []const u8 = "brightness",
@@ -93,7 +93,7 @@ widget: Widget,
 
 /// Initializes the widget with the given arguments.
 pub fn init(area: Rect, config: BrightnessConfig) !Brightness {
-    const directory = config.directory.path;
+    const directory = config.directory.constSlice();
     assert(directory.len > 0);
 
     const brightness_directory_should_add_sep = directory[directory.len - 1] != fs.path.sep;

@@ -102,8 +102,8 @@ fn initializeShm(draw_context: *DrawContext, wayland_context: *WaylandContext) I
     assert(draw_context.output_context.height >= draw_context.window_area.height);
     assert(draw_context.surface != null);
 
-    const width = config.width orelse draw_context.output_context.width;
-    const height = config.height;
+    const width = config.general.width orelse draw_context.output_context.width;
+    const height = config.general.height;
     const stride = @as(u31, width) * @sizeOf(Color);
 
     const size: u31 = stride * @as(u31, height);
@@ -157,9 +157,9 @@ pub fn outputChanged(draw_context: *DrawContext, wayland_context: *WaylandContex
         );
         draw_context.layer_surface = layer_surface;
 
-        layer_surface.setSize(config.width orelse 0, config.height);
+        layer_surface.setSize(config.general.width orelse 0, config.general.height);
         layer_surface.setAnchor(constants.WAYLAND_ZWLR_ANCHOR);
-        layer_surface.setExclusiveZone(config.height);
+        layer_surface.setExclusiveZone(config.general.height);
         layer_surface.setKeyboardInteractivity(zwlr.LayerSurfaceV1.KeyboardInteractivity.none);
 
         layer_surface.setListener(*WaylandContext, layerSurfaceListener, wayland_context);
@@ -346,7 +346,7 @@ pub fn draw(draw_context: *DrawContext) void {
 
     if (draw_context.full_redraw) {
         draw_context.current_area = draw_context.window_area;
-        draw_context.window_area.drawArea(draw_context, config.background_color);
+        draw_context.window_area.drawArea(draw_context, config.general.background_color);
     }
 
     draw_context.root_container.?.draw(draw_context) catch |err| {

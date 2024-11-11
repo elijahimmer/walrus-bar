@@ -8,36 +8,38 @@ pub const default_window_height = 28;
 pub const minimum_window_height = 15;
 pub const minimum_window_width = 500;
 
-pub const Path = struct {
-    path: []const u8,
+pub const transient_settings = .{
+    "background_color",
+    "text_color",
+};
+
+pub const Path = BoundedArray(u8, fs.max_path_bytes);
+
+pub const General = struct {
+    width: ?u16 = null,
+    height: u16 = default_window_height,
+
+    text_color: Color = default_text_color,
+    background_color: Color = default_background_color,
 };
 
 /// global config. Use only after you have initialized it with init
 pub var global: Config = undefined;
 
 /// Reads and initializes the config from CLI args.
-/// May not return if bad args or help is passed.
 pub fn init_global(allocator: Allocator) Allocator.Error!void {
-    global = try parse_argv(allocator);
+    global = try parseArgv(allocator);
 }
 
 pub fn deinit_global() void {
-    global.clap_res.deinit();
+    global.internal.clap_res.deinit();
     global = undefined;
 }
 
-pub const General = struct {
-    width: ?u16 = null,
-    height: u16 = default_window_height,
-
-    title: []const u8 = "walrus-bar",
-
-    text_color: Color = default_text_color,
-    background_color: Color = default_background_color,
-};
-
-clap_res: clap.Result(clap.Help, &params, parsers), // general things
-program_name: []const u8,
+/// internal setting, should never be user-accessible
+internal: struct {
+    clap_res: clap.Result(clap.Help, &params, parsers),
+},
 
 general: General,
 clock: if (options.clock_enabled) ClockConfig else void,
@@ -45,16 +47,9 @@ battery: if (options.battery_enabled) BatteryConfig else void,
 brightness: if (options.brightness_enabled) BrightnessConfig else void,
 workspaces: if (options.workspaces_enabled) WorkspacesConfig else void,
 
-fn parse_argv(allocator: Allocator) Allocator.Error!Config {
+fn parseArgv(allocator: Allocator) Allocator.Error!Config {
     var iter = std.process.ArgIterator.init();
     defer iter.deinit();
-
-    // technically, there should always be a first arg,
-    // but whatever.
-    const program_name = if (std.os.argv.len > 0)
-        std.mem.span(std.os.argv[0])
-    else
-        "walrus-bar";
 
     var diag = clap.Diagnostic{};
     const res = clap.parse(clap.Help, &params, parsers, .{
@@ -95,8 +90,7 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     }
 
     var config = Config{
-        .clap_res = res,
-        .program_name = program_name,
+        .internal = .{ .clap_res = res },
 
         .general = .{},
         .battery = .{},
@@ -106,15 +100,13 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     };
 
     ini_config: {
-        const default_config_path = getDefaultConfigPath();
-
         const specified_config_file = if (args.@"config-file") |config_path| specified_config_path: {
-            assert(fs.path.isAbsolute(config_path));
-            break :specified_config_path config_path;
+            assert(fs.path.isAbsolute(config_path.constSlice()));
+            break :specified_config_path config_path.constSlice();
         } else null;
 
         const config_path = specified_config_file orelse
-            if (default_config_path) |cp| cp.constSlice() else break :ini_config;
+            if (getDefaultConfigPath()) |cp| cp.constSlice() else break :ini_config;
 
         assert(fs.path.isAbsolute(config_path));
 
@@ -127,18 +119,25 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
         };
         defer config_file.close();
 
+        const metadata = config_file.metadata() catch |err| {
+            log.warn("Failed to get config file metadata with error: {s}", .{@errorName(err)});
+            break :ini_config;
+        };
+
+        const file_kind = metadata.kind();
+
+        if (file_kind != .file) {
+            log.warn("Specified config file isn't a file, it is a {s}", .{@tagName(file_kind)});
+            break :ini_config;
+        }
+
         parseConfig(Config, &config, config_file) catch |err| {
             log.warn("Failed to parse config with: {s}", .{@errorName(err)});
             break :ini_config;
         };
     }
 
-    if (args.width) |width| config.width = width;
-    if (args.height) |height| config.height = height;
-    if (args.@"text-color") |text_color| config.text_color = text_color;
-    if (args.@"background-color") |background_color| config.background_color = background_color;
-    if (args.title) |title| config.title = title;
-
+    createConfig(General, args, &config.general);
     createConfig(BatteryConfig, args, &config.battery);
     createConfig(BrightnessConfig, args, &config.brightness);
     createConfig(ClockConfig, args, &config.clock);
@@ -147,20 +146,23 @@ fn parse_argv(allocator: Allocator) Allocator.Error!Config {
     return config;
 }
 
-pub fn getDefaultConfigPath() ?BoundedArray(u8, max_path_bytes) {
+pub fn getDefaultConfigPath() ?Path {
     const xdg_config_home = posix.getenvZ("XDG_CONFIG_HOME") orelse {
-        log.warn("environment variable XDG_CONFIG_HOME not found!", .{});
+        log.warn("environment variable 'XDG_CONFIG_HOME' not found!", .{});
         return null;
     };
 
     if (!fs.path.isAbsolute(xdg_config_home)) {
-        log.warn("environment variable XDG_CONFIG_HOME isn't a absolute path!", .{});
+        log.warn("environment variable 'XDG_CONFIG_HOME' isn't a absolute path!", .{});
         return null;
     }
 
     const from_config_home = "/walrus-bar/config.ini";
 
-    if (xdg_config_home.len > max_path_bytes - from_config_home.len) return null;
+    if (xdg_config_home.len > max_path_bytes - from_config_home.len) {
+        log.warn("environment variable 'XDG_CONFIG_HOME' is too long to be a proper path", .{});
+        return null;
+    }
 
     var path: BoundedArray(u8, max_path_bytes) = .{};
 
@@ -175,6 +177,15 @@ pub fn getDefaultConfigPath() ?BoundedArray(u8, max_path_bytes) {
 fn getArgName(comptime T: type, name: []const u8) []const u8 {
     // Not sure why 1_000 branches isn't enough, seems to be something with lastIndexOfScalar or lowerString
     @setEvalBranchQuota(10_000);
+
+    if (T == General) {
+        var arg_name: [name.len]u8 = undefined;
+
+        _ = ascii.lowerString(&arg_name, name);
+
+        mem.replaceScalar(u8, &arg_name, '_', '-');
+        return &arg_name;
+    }
 
     const type_name = comptime type_name: {
         const type_name = @typeName(T);
@@ -205,13 +216,7 @@ pub fn createConfig(comptime T: type, args: anytype, out: *T) void {
     inline for (type_info.fields) |field| {
         const arg_name = comptime getArgName(T, field.name);
 
-        const arg_type = @TypeOf(@field(out, field.name));
-
-        // place transient configs here, like background and text colors.
-        const value = inline for (.{
-            "background_color",
-            "text_color",
-        }) |name| {
+        const value = inline for (transient_settings) |name| {
 
             // check if it is a transient field
             if (comptime ascii.eqlIgnoreCase(field.name, name)) {
@@ -229,6 +234,7 @@ pub fn createConfig(comptime T: type, args: anytype, out: *T) void {
                 // if that field was configured, use that
                 if (@field(args, arg_name)) |specified_arg|
                     break specified_arg;
+                // otherwise use the transient name
                 if (@field(args, transient_arg_name)) |transient_specified_field|
                     break transient_specified_field;
             }
@@ -236,10 +242,7 @@ pub fn createConfig(comptime T: type, args: anytype, out: *T) void {
         } else if (@field(args, arg_name)) |specified_arg| specified_arg else null;
 
         if (value) |v| {
-            @field(out, field.name) = switch (arg_type) {
-                Path => .{ .path = v },
-                else => v,
-            };
+            @field(out, field.name) = v;
         }
     }
 }
@@ -247,16 +250,18 @@ pub fn createConfig(comptime T: type, args: anytype, out: *T) void {
 pub fn resolveTypeName(comptime T: type) []const u8 {
     const TInner = if (@typeInfo(T) == .Optional) @typeInfo(T).Optional.child else T;
 
-    return switch (TInner) {
+    return comptime switch (TInner) {
         Path => "Path",
         []const u8 => "String",
         u21 => "Character",
+        u8 => "u8",
         Size => "Size",
         Color => "Color",
-        else => @typeName(T),
+        else => unreachable,
     };
 }
 
+// TODO: Remove the string generation and just do normal.
 /// Turns a configuration struct into a help message.
 pub fn generateHelpMessageComptime(comptime T: type) [helpMessageLen(T)]u8 {
     assert(@typeInfo(T) == .Struct);
@@ -315,13 +320,13 @@ pub fn helpMessageLen(T: type) comptime_int {
 
 const help =
     std.fmt.comptimePrint(
-    \\-h, --help                     Display this message and exit.
-    \\    --dependencies             Print a list of the dependencies and versions and exit.
-    \\    --colors                   Print a list of all the named colors and exit.
-    \\    --config-file <Path>       The path to the config file (default: "$XDG_CONFIG_HOME/walrus-bar/config.ini")
-    \\-w, --width <Size>             The window's width (minimum: {}) (full screen width if not specified)
-    \\-l, --height <Size>            The window's height (minimum: {}) (default: {})
-    \\-t, --title <String>           The window's title (default: OS Process Name (likely 'walrus-bar'))
+    \\-h, --help                 Display this message and exit.
+    \\    --dependencies         Print a list of the dependencies and versions and exit.
+    \\    --colors               Print a list of all the named colors and exit.
+    \\    --config-file <Path>   The path to the config file (default: "$XDG_CONFIG_HOME/walrus-bar/config.ini")
+    \\-w, --width <Size>         The window's width (minimum: {}) (full screen width if not specified)
+    \\-l, --height <Size>        The window's height (minimum: {}) (default: {})
+    //\\-t, --title <String>       The window's title (default: OS Process Name (likely 'walrus-bar'))
     \\
     \\--text-color <Color>       The default text colors (default: {s})
     \\--background-color <Color> The default background color (default: {s})
@@ -333,14 +338,25 @@ const help =
     (if (options.workspaces_enabled) generateHelpMessageComptime(WorkspacesConfig) else "");
 
 /// Keep up to date with `help_message_prelude`
-const parsers = .{
-    .Path = pathParser,
-    .Character = characterParser,
-    .String = clap.parsers.string,
-    .Size = clap.parsers.int(Size, 0),
-    .u8 = clap.parsers.int(u8, 0),
-    .Color = colors.str2Color,
+pub const parsers = .{
+    .Path = parsePath,
+    .Character = parseCharacter,
+    .String = parseString,
+    .Size = generateIntParser(Size, 0),
+    .u8 = generateIntParser(u8, 0),
+    .Color = colors.parseColor,
 };
+
+pub const ParseIntError = std.fmt.ParseIntError;
+
+pub fn generateIntParser(comptime T: type, bits: u8) fn ([]const u8) ParseIntError!T {
+    assert(@typeInfo(T) == .Int);
+    return struct {
+        pub fn parse(input: []const u8) ParseIntError!T {
+            return std.fmt.parseInt(T, input, bits);
+        }
+    }.parse;
+}
 
 /// Keep up to date with `parsers`
 const help_message_prelude = std.fmt.comptimePrint(
@@ -426,31 +442,31 @@ const ParseStringError = error{
     @"Invalid UTF-8 String!",
 };
 
-fn parseString(str: []const u8) ![]const u8 {
+fn parseString(str: []const u8) ParseStringError![]const u8 {
     if (str.len == 0) return error.@"String empty!";
     if (!unicode.utf8ValidateSlice(str)) return error.@"Invalid UTF-8 String!";
     return str;
 }
 
-const PathParserError = error{
+const ParsePathError = error{
     @"Path too long",
     @"Path isn't absolute",
 };
 
-fn pathParser(path: []const u8) PathParserError![]const u8 {
+fn parsePath(path: []const u8) ParsePathError!Path {
     if (path.len > std.fs.max_path_bytes) return error.@"Path too long";
     if (!fs.path.isAbsolute(path)) return error.@"Path isn't absolute";
 
-    return path;
+    return Path.fromSlice(path) catch unreachable;
 }
 
-const CharacterParserError = error{
+const ParserCharacterError = error{
     @"No character provided",
     @"Character isn't valid UTF-8",
     @"Too many characters provided, only 1 character allowed",
 };
 
-fn characterParser(character: []const u8) CharacterParserError!u21 {
+fn parseCharacter(character: []const u8) ParserCharacterError!u21 {
     if (character.len == 0) return error.@"No character provided";
     const sequence_length = unicode.utf8ByteSequenceLength(character[0]) catch {
         return error.@"Character isn't valid UTF-8";

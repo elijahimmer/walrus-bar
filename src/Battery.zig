@@ -48,7 +48,7 @@ pub const BatteryConfig = struct {
 
     pub const inner_padding_comment = "The padding between the battery and the progress_bar.";
 
-    directory: Config.Path = .{ .path = "/sys/class/power_supply/BAT0" },
+    directory: Config.Path = Config.Path.fromSlice("/sys/class/power_supply/BAT0") catch unreachable,
 
     full_file_name: []const u8 = "energy_full",
     charge_file_name: []const u8 = "energy_now",
@@ -131,7 +131,7 @@ critical_animation_speed: u8,
 
 /// Initializes the widget with the given arguments.
 pub fn init(area: Rect, config: BatteryConfig) !Battery {
-    const directory = config.directory.path;
+    const directory = config.directory.constSlice();
     assert(directory.len > 0);
 
     const directory_should_add_sep = directory[directory.len - 1] != fs.path.sep;

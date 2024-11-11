@@ -62,8 +62,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                     pointer_device.setShape(enter.serial, .default);
                 }
 
-                root_container.area.assertContainsPoint(point);
-                root_container.motion(point);
+                if (root_container.area.containsPoint(point)) root_container.motion(point);
             } else {
                 log_local.warn("Cursor entered but not on a surface?", .{});
             }
@@ -78,9 +77,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                     .y = @intCast(@max(motion.surface_y.toInt(), 0)),
                 };
 
-                if (root_container.area.containsPoint(point)) {
-                    root_container.motion(point);
-                }
+                if (root_container.area.containsPoint(point)) root_container.motion(point);
             } else {
                 log_local.warn("Cursor motion but not on a surface?", .{});
             }
