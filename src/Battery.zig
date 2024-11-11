@@ -155,31 +155,67 @@ pub fn init(area: Rect, config: BatteryConfig) !Battery {
     // the full file's name
     battery_path.appendSliceAssumeCapacity(config.full_file_name);
 
-    const full_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
+    const full_file = std.fs.cwd().openFile(battery_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Battery Full File with: {s}", .{@errorName(err)});
         return error.FullFileError;
     };
     errdefer full_file.close();
 
+    {
+        const full_metadata = full_file.metadata() catch |err| {
+            log.warn("Failed to get full file's metadata with: {s}", .{@errorName(err)});
+            return error.FullFileError;
+        };
+
+        if (full_metadata.kind() != .file) {
+            log.warn("Full file isn't a file, it is a {s}", .{@tagName(full_metadata.kind())});
+            return error.FullFileError;
+        }
+    }
+
     // remove the full file's name, add the charge file's
     battery_path.len -= @intCast(config.full_file_name.len);
     battery_path.appendSliceAssumeCapacity(config.charge_file_name);
 
-    const charge_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
+    const charge_file = std.fs.cwd().openFile(battery_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Battery Charge File with: {s}", .{@errorName(err)});
         return error.ChargeFileError;
     };
     errdefer full_file.close();
 
+    {
+        const charge_metadata = charge_file.metadata() catch |err| {
+            log.warn("Failed to get charge file's metadata with: {s}", .{@errorName(err)});
+            return error.ChargeFileError;
+        };
+
+        if (charge_metadata.kind() != .file) {
+            log.warn("Charge file isn't a file, it is a {s}", .{@tagName(charge_metadata.kind())});
+            return error.ChargeFileError;
+        }
+    }
+
     // remove the charge file, add status file.
     battery_path.len -= @intCast(config.charge_file_name.len);
     battery_path.appendSliceAssumeCapacity(config.status_file_name);
 
-    const status_file = std.fs.openFileAbsolute(battery_path.slice(), .{}) catch |err| {
+    const status_file = std.fs.cwd().openFile(battery_path.slice(), .{}) catch |err| {
         log.warn("Failed to open Battery Status File with: {s}", .{@errorName(err)});
         return error.StatusFileError;
     };
     errdefer full_file.close();
+
+    {
+        const status_metadata = status_file.metadata() catch |err| {
+            log.warn("Failed to get status file's metadata with: {s}", .{@errorName(err)});
+            return error.StatusFileError;
+        };
+
+        if (status_metadata.kind() != .file) {
+            log.warn("Status file isn't a file, it is a {s}", .{@tagName(status_metadata.kind())});
+            return error.StatusFileError;
+        }
+    }
 
     const padding = config.padding orelse area.height / 8;
 

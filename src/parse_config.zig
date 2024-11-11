@@ -110,7 +110,8 @@ pub fn setOption(config: anytype, section_name: []const u8, setting: Setting, li
 
         const section = &@field(config, config_field.name);
         const SectionType = @TypeOf(@field(config, config_field.name));
-        if (@typeInfo(SectionType) != .Struct and @typeInfo(SectionType) != .Void) @compileError("Invalid section type " ++ @typeName(SectionType) ++ " Expected a struct or void.");
+        if (@typeInfo(SectionType) != .Struct and @typeInfo(SectionType) != .Void)
+            @compileError("Invalid section type " ++ @typeName(SectionType) ++ " Expected a struct or void.");
         comptime if (@typeInfo(SectionType) == .Void) continue;
 
         if (is_transient or ascii.eqlIgnoreCase(config_field.name, section_name)) {

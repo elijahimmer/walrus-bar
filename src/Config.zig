@@ -131,6 +131,28 @@ fn parseArgv(allocator: Allocator) Allocator.Error!Config {
             break :ini_config;
         }
 
+        const old_cwd = fs.cwd();
+        defer old_cwd.setAsCwd() catch |err| {
+            log.warn("Failed to set Current Working Directory Back to prior CWD with error: {s}", .{@errorName(err)});
+        };
+
+        change_cwd: {
+            const base_name = fs.path.basename(config_path);
+            const directory_path = config_path[0 .. config_path.len - base_name.len];
+
+            if (directory_path.len == 0) break :change_cwd;
+
+            const new_cwd = old_cwd.openDir(directory_path, .{}) catch |err| {
+                log.warn("Failed to open directory: '{s}' with error: {s}", .{ directory_path, @errorName(err) });
+                break :change_cwd;
+            };
+
+            new_cwd.setAsCwd() catch |err| {
+                log.warn("Failed to set directory '{s}' as current working directory with error: {s}", .{ directory_path, @errorName(err) });
+                break :change_cwd;
+            };
+        }
+
         parseConfig(Config, &config, config_file) catch |err| {
             log.warn("Failed to parse config with: {s}", .{@errorName(err)});
             break :ini_config;
@@ -164,7 +186,7 @@ pub fn getDefaultConfigPath() ?Path {
         return null;
     }
 
-    var path: BoundedArray(u8, max_path_bytes) = .{};
+    var path: Path = .{};
 
     path.appendSliceAssumeCapacity(xdg_config_home);
     path.appendSliceAssumeCapacity(from_config_home);
@@ -450,14 +472,20 @@ fn parseString(str: []const u8) ParseStringError![]const u8 {
 
 const ParsePathError = error{
     @"Path too long",
-    @"Path isn't absolute",
+    @"Failed to resolve real path",
 };
 
 fn parsePath(path: []const u8) ParsePathError!Path {
-    if (path.len > std.fs.max_path_bytes) return error.@"Path too long";
-    if (!fs.path.isAbsolute(path)) return error.@"Path isn't absolute";
+    var out_path = Path{};
 
-    return Path.fromSlice(path) catch unreachable;
+    const real_path = std.fs.realpath(path, &out_path.buffer) catch |err| {
+        log.warn("Failed to resolve real path with error: {s}", .{@errorName(err)});
+        return error.@"Failed to resolve real path";
+    };
+
+    out_path.resize(real_path.len) catch unreachable;
+
+    return Path.fromSlice(path) catch return error.@"Path too long";
 }
 
 const ParserCharacterError = error{
