@@ -125,7 +125,7 @@ test rgba2argb {
     );
 }
 
-pub const Str2ColorError = error{
+pub const ParseColorError = error{
     @"Color string is empty",
     @"Illegal character in color hex string",
     @"Color hex code invalid length",
@@ -135,7 +135,7 @@ pub const Str2ColorError = error{
 };
 
 /// turns a rgba hex string into a color
-pub fn str2Color(str: []const u8) Str2ColorError!Color {
+pub fn parseColor(str: []const u8) ParseColorError!Color {
     if (str.len == 0) return error.@"Color string is empty";
 
     inline for (COLOR_LIST) |color| {
@@ -198,14 +198,14 @@ pub fn str2Color(str: []const u8) Str2ColorError!Color {
     }
 }
 
-test str2Color {
+test parseColor {
     const expectEqual = std.testing.expectEqual;
 
-    try expectEqual(0xFF191724, @as(u32, @bitCast(try str2Color("main"))));
-    try expectEqual(0x44112233, @as(u32, @bitCast(try str2Color("#11223344"))));
-    try expectEqual(0xFF112233, @as(u32, @bitCast(try str2Color("#112233"))));
-    try expectEqual(0x44112233, @as(u32, @bitCast(try str2Color("#1234"))));
-    try expectEqual(0xFF112233, @as(u32, @bitCast(try str2Color("#123"))));
+    try expectEqual(0xFF191724, @as(u32, @bitCast(try parseColor("main"))));
+    try expectEqual(0x44112233, @as(u32, @bitCast(try parseColor("#11223344"))));
+    try expectEqual(0xFF112233, @as(u32, @bitCast(try parseColor("#112233"))));
+    try expectEqual(0x44112233, @as(u32, @bitCast(try parseColor("#1234"))));
+    try expectEqual(0xFF112233, @as(u32, @bitCast(try parseColor("#123"))));
 }
 
 pub fn comptimeColorToString(comptime color: Color) []const u8 {

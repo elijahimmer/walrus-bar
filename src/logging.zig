@@ -7,6 +7,8 @@ const other_logging_scopes = [_]@TypeOf(.enum_literal){
     .Seat,
     .Output,
     .Pointer,
+    .Config,
+    .ParseConfig,
 };
 
 // These have build script specified logging levels.
