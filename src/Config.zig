@@ -93,10 +93,10 @@ fn parseArgv(allocator: Allocator) Allocator.Error!Config {
         .internal = .{ .clap_res = res },
 
         .general = .{},
-        .battery = .{},
-        .brightness = .{},
-        .clock = .{},
-        .workspaces = .{},
+        .battery = if (options.battery_enabled) .{} else {},
+        .brightness = if (options.brightness_enabled) .{} else {},
+        .clock = if (options.clock_enabled) .{} else {},
+        .workspaces = if (options.workspaces_enabled) .{} else {},
     };
 
     ini_config: {
@@ -138,10 +138,10 @@ fn parseArgv(allocator: Allocator) Allocator.Error!Config {
     }
 
     createConfig(General, args, &config.general);
-    createConfig(BatteryConfig, args, &config.battery);
-    createConfig(BrightnessConfig, args, &config.brightness);
-    createConfig(ClockConfig, args, &config.clock);
-    createConfig(WorkspacesConfig, args, &config.workspaces);
+    if (options.battery_enabled) createConfig(BatteryConfig, args, &config.battery);
+    if (options.brightness_enabled) createConfig(BrightnessConfig, args, &config.brightness);
+    if (options.clock_enabled) createConfig(ClockConfig, args, &config.clock);
+    if (options.workspaces_enabled) createConfig(WorkspacesConfig, args, &config.workspaces);
 
     return config;
 }
