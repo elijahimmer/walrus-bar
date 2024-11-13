@@ -6,9 +6,9 @@ pub fn errorAssert(err: c_int, comptime message: []const u8, args: anytype) void
     if (!isErr(err)) return;
 
     const err_desc = freetype.FT_Error_String(err);
-    if (err_desc == null) std.debug.panic("{s}. Unknown FreeType Error", .{message});
-
-    std.debug.panic(message ++ ": FreeType Error '{s}'", args ++ .{err_desc});
+    if (err_desc) |ed| {
+        std.debug.panic(message ++ ": FreeType Error '{s}'", args ++ .{ed});
+    } else std.debug.panic("{s}. Unknown FreeType Error", .{message});
 }
 
 pub fn errorPrint(err: c_int, comptime message: []const u8, args: anytype) void {
@@ -148,7 +148,8 @@ test "freetype allocator" {
 const options = @import("options");
 const font = @import("font");
 
-const freetype = @cImport({
+pub const freetype = @cImport({
+    @cDefine("FT_CONFIG_OPTION_ERROR_STRING", "1");
     @cInclude("ft2build.h");
     @cInclude("freetype/freetype.h");
     @cInclude("freetype/ftsystem.h");

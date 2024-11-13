@@ -8,6 +8,8 @@ pub var global: FreeTypeContext = undefined;
 
 freetype_lib: freetype.FT_Library,
 font_face: freetype.FT_Face,
+font_file: ?fs.File = null,
+font_data: ?[]align(mem.page_size) const u8 = null,
 
 cache: Cache,
 allocator: Allocator,
@@ -108,7 +110,7 @@ pub const Glyph = struct {
     }
 };
 
-pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
+pub fn init_global(parent_allocator: Allocator, font_path: ?Path) Allocator.Error!void {
     global.cache_allocator_buffer = undefined;
     global.cache_allocator_internal = FixedBufferAllocator.init(&global.cache_allocator_buffer);
     global.cache = Cache.init(global.cache_allocator_internal.allocator());
@@ -122,6 +124,8 @@ pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
         break :alloc alloc;
     };
 
+    global.font_file = null;
+    global.font_data = null;
     global.allocator = parent_allocator;
     global.internal.alloc_user = try freetype_utils.AllocUser.init(alloc);
     global.internal.freetype_allocator = freetype.FT_MemoryRec_{
@@ -145,11 +149,44 @@ pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
 
     // TODO: allow for runtime custom font
     {
-        const font_data = font.font_data;
-        const err = freetype.FT_New_Memory_Face(global.freetype_lib, font_data.ptr, font_data.len, 0, &global.font_face);
+        if (font_path) |fp| specified_font: {
+            assert(fs.path.isAbsolute(fp.constSlice()));
+            const font_data = openFontFile(fp.constSlice()) catch break :specified_font;
+
+            {
+                const err = freetype.FT_New_Memory_Face(global.freetype_lib, font_data.ptr, @intCast(font_data.len), 0, &global.font_face);
+                if (freetype_utils.isErr(err)) {
+                    freetype_utils.errorPrint(err, "Failed to initialize specified font, resorting to backup", .{});
+                    break :specified_font;
+                }
+            }
+
+            if (global.font_face.*.face_flags & freetype.FT_FACE_FLAG_HORIZONTAL == 0) {
+                log.warn("Provided font has no horizontal metrics!", .{});
+                const err = freetype.FT_Done_Face(global.font_face);
+                if (freetype_utils.isErr(err)) {
+                    freetype_utils.errorPrint(err, "Failed to de-initialize the provided font!", .{});
+                }
+
+                break :specified_font;
+            }
+        }
+
+        const err = freetype.FT_New_Memory_Face(global.freetype_lib, font.font_data.ptr, font.font_data.len, 0, &global.font_face);
         freetype_utils.errorAssert(err, "Failed to initilize font", .{});
     }
-    errdefer freetype.FT_Done_Face(&global.font_face);
+
+    const has_font = global.font_data != null and global.font_file != null;
+    const no_font = global.font_data == null and global.font_file == null;
+    assert(has_font or no_font);
+
+    errdefer {
+        if (has_font) {
+            posix.munmap(global.font_data.?);
+            global.font_file.?.close();
+        }
+        freetype.FT_Done_Face(&global.font_face);
+    }
 
     const font_family = if (global.font_face.*.family_name) |family| mem.span(@as([*:0]const u8, @ptrCast(family))) else "none";
     const font_style = if (global.font_face.*.style_name) |style| mem.span(@as([*:0]const u8, @ptrCast(style))) else "none";
@@ -164,11 +201,56 @@ pub fn init_global(parent_allocator: Allocator) Allocator.Error!void {
     }
 }
 
+pub fn openFontFile(path: []const u8) ![]const u8 {
+    assert(fs.path.isAbsolute(path));
+    defer {
+        const has_font = global.font_data != null and global.font_file != null;
+        const no_font = global.font_data == null and global.font_file == null;
+        assert(has_font or no_font);
+    }
+
+    const font_file = fs.openFileAbsolute(path, .{}) catch |err| {
+        log.warn("Failed to open font path: '{s}' with error: {s}", .{ path, @errorName(err) });
+        return err;
+    };
+    errdefer font_file.close();
+
+    const file_metadata = font_file.metadata() catch |err| {
+        log.warn("Failed get metadata of font file: '{s}' with error: {s}", .{ path, @errorName(err) });
+        return err;
+    };
+
+    if (file_metadata.kind() != .file) {
+        log.warn("Font file given isn't a file, it's a '{s}'", .{@tagName(file_metadata.kind())});
+        return error.@"Not a File";
+    }
+
+    const font_data = posix.mmap(null, file_metadata.size(), posix.PROT.READ, .{ .TYPE = .SHARED }, font_file.handle, 0) catch |err| {
+        log.warn("Failed mmap to open font file: '{s}' with error: {s}", .{ path, @errorName(err) });
+        return err;
+    };
+    errdefer posix.munmap(font_data);
+
+    global.font_data = font_data;
+    global.font_file = font_file;
+
+    return font_data;
+}
+
 pub fn deinit(self: *FreeTypeContext) void {
     {
         const err = freetype.FT_Done_Face(self.font_face);
         freetype_utils.errorPrint(err, "Failed to free FreeType Font", .{});
     }
+    const has_font = self.font_data != null and self.font_file != null;
+    const no_font = self.font_data == null and self.font_file == null;
+    assert(has_font or no_font);
+
+    if (has_font) {
+        posix.munmap(self.font_data.?);
+        self.font_file.?.close();
+    }
+
     {
         const err = freetype.FT_Done_Library(self.freetype_lib);
         freetype_utils.errorPrint(err, "Failed to free FreeType Library", .{});
@@ -356,7 +438,8 @@ pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, args: LoadC
 /// Returns a pointer to a `Glyph`. This pointer may be invalidated after another call to loadChar,
 ///     and should not be stored.
 ///
-pub fn loadChar(self: *FreeTypeContext, char: u21, args: LoadCharOptions) *Glyph {
+pub fn loadChar(self: *FreeTypeContext, char: u21, args: LoadCharOptions) *const Glyph {
+    assert(char != 0);
     const cache_key = CacheKey{
         .char = char,
         .font_size = args.font_size,
@@ -368,19 +451,24 @@ pub fn loadChar(self: *FreeTypeContext, char: u21, args: LoadCharOptions) *Glyph
     };
 
     // get char slice for debugging
-    var char_slice: [4]u8 = undefined;
+    var char_buffer: [4]u8 = undefined;
 
-    const bytes = unicode.utf8Encode(char, &char_slice) catch |err| switch (err) {
+    const bytes = unicode.utf8Encode(char, &char_buffer) catch |err| switch (err) {
         error.CodepointTooLarge, error.Utf8CannotEncodeSurrogateHalf => unreachable,
     };
 
+    assert(bytes != 0);
+
+    const char_slice = char_buffer[0..bytes];
+
     if (cache_record.found_existing) {
         if (@intFromEnum(args.load_mode) <= @intFromEnum(cache_record.value_ptr.load_mode)) {
+            cache_log.debug("Cached glyph cache hit: '{any}' '{s}', {s} -> {s}", .{ char_slice, char_slice, @tagName(cache_record.value_ptr.load_mode), @tagName(args.load_mode) });
             return cache_record.value_ptr;
         }
         cache_log.debug("Cached glyph had lower load_mode: '{s}', {s} -> {s}", .{ char_slice, @tagName(cache_record.value_ptr.load_mode), @tagName(args.load_mode) });
     } else {
-        cache_log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice[0..bytes], args.font_size });
+        cache_log.debug("Cache miss on glyph: '{s}' with size: {}", .{ char_slice, args.font_size });
     }
 
     cache_record.value_ptr.* = self.loadCharNoCache(char, args);
@@ -592,20 +680,18 @@ const Size = drawing.Size;
 const colors = @import("colors.zig");
 const Color = colors.Color;
 
+const Path = @import("Config.zig").Path;
+
 const freetype_utils = @import("freetype_utils.zig");
+const freetype = freetype_utils.freetype;
+
 const options = @import("options");
 const font = @import("font");
 
-pub const freetype = @cImport({
-    @cInclude("ft2build.h");
-    @cInclude("freetype/freetype.h");
-    @cInclude("freetype/ftsystem.h");
-    @cInclude("freetype/ftmodapi.h");
-});
-const FT_Memory = freetype.FT_Memory;
-
 const std = @import("std");
+const posix = std.posix;
 const mem = std.mem;
+const fs = std.fs;
 
 const Allocator = mem.Allocator;
 const AutoArrayHashMap = std.AutoArrayHashMap;

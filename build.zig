@@ -11,7 +11,7 @@ pub fn build(b: *std.Build) void {
 
     const font = b.addOptions();
 
-    const font_path = b.option([]const u8, "font-path", "Path to font to use (default: 'fonts/FiraCodeNerdFontMono-Regular.ttf')") orelse "fonts/FiraCodeNerdFontMono-Regular.ttf";
+    const font_path = b.option([]const u8, "font-path", "Path to font to use (default: 'fonts/NerdFont/FiraCodeNerdFontMono-Regular.ttf')") orelse "fonts/NerdFont/FiraCodeNerdFontMono-Regular.ttf";
     const font_file = std.fs.cwd().openFile(font_path, .{ .mode = .read_only }) catch @panic("Failed to open font file");
     const font_data = font_file.readToEndAlloc(b.allocator, 5_000_000) catch @panic("Failed to read font file (maybe larger than 5Mbs)?");
     font.addOption([]const u8, "font_data", font_data);

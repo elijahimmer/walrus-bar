@@ -10,7 +10,7 @@ pub fn main() !void {
     defer Config.deinit_global();
 
     // don't use logging allocator as you can enable it separately.
-    try FreeTypeContext.init_global(gpa.allocator());
+    try FreeTypeContext.init_global(gpa.allocator(), Config.global.general.font_path);
     defer FreeTypeContext.global.deinit();
 
     // initialize the app's context.

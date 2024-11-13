@@ -186,6 +186,8 @@ pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
 
             wksp.area.drawArea(draw_context, background_color);
 
+            log.debug("loading workspace {} then char {}", .{ wksp.id, wksp.char });
+            assert(wksp.char != 0);
             freetype_context.drawChar(.{
                 .draw_context = draw_context,
 
@@ -261,7 +263,7 @@ fn updateState(self: *Workspaces) !void {
                 self.workspaces.appendAssumeCapacity(.{
                     .area = workspace_area,
                     .char = 0,
-                    .id = undefined,
+                    .id = 0,
                 });
 
                 workspace_area.x += area.height + self.workspace_spacing;
@@ -281,12 +283,13 @@ fn updateState(self: *Workspaces) !void {
     var newly_active_found = false;
     var prev_active_found = false;
 
-    const counter_max = self.workspaces.len;
-
     assert(workspace_state.workspaces.len == self.workspaces.len);
     defer assert(workspace_state.workspaces.len == self.workspaces.len);
-    for (workspace_state.workspaces.constSlice(), self.workspaces.slice(), 0..) |wk_id, *wksp, counter| {
-        assert(counter < counter_max);
+
+    var counter: usize = 0;
+    for (workspace_state.workspaces.constSlice(), self.workspaces.slice()) |wk_id, *wksp| {
+        assert(counter < workspace_state.workspaces.len); // counter
+        defer counter += 1;
 
         defer wksp.id = wk_id;
         const wk_symbol = self.getWorkspaceSymbol(wk_id);
@@ -309,6 +312,7 @@ fn updateState(self: *Workspaces) !void {
             wksp.char = wk_symbol;
             wksp.should_redraw = true;
         }
+        assert(wksp.char == wk_symbol);
     }
 }
 

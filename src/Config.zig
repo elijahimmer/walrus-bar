@@ -16,8 +16,19 @@ pub const transient_settings = .{
 pub const Path = BoundedArray(u8, fs.max_path_bytes);
 
 pub const General = struct {
+    pub const width_comment = "The window's width (minimum: {}) (full screen width if not specified)";
+    pub const height_comment = "The window's height (minimum: {})";
+    pub const title_comment = "The window's title";
+
+    pub const font_path_comment = "The path to the font to use, defaults to embedded font";
+
+    pub const text_color_comment = "The default text colors";
+    pub const background_color_comment = "The default background color";
+
     width: ?u16 = null,
     height: u16 = default_window_height,
+
+    font_path: ?Path = null,
 
     text_color: Color = default_text_color,
     background_color: Color = default_background_color,
@@ -136,6 +147,7 @@ fn parseArgv(allocator: Allocator) Allocator.Error!Config {
             log.warn("Failed to set Current Working Directory Back to prior CWD with error: {s}", .{@errorName(err)});
         };
 
+        // change cwd to the config file so you can have paths relative to it.
         change_cwd: {
             const base_name = fs.path.basename(config_path);
             const directory_path = config_path[0 .. config_path.len - base_name.len];
@@ -263,9 +275,7 @@ pub fn createConfig(comptime T: type, args: anytype, out: *T) void {
             // otherwise, find the widget-specific config
         } else if (@field(args, arg_name)) |specified_arg| specified_arg else null;
 
-        if (value) |v| {
-            @field(out, field.name) = v;
-        }
+        if (value) |v| @field(out, field.name) = v;
     }
 }
 
@@ -341,19 +351,12 @@ pub fn helpMessageLen(T: type) comptime_int {
 }
 
 const help =
-    std.fmt.comptimePrint(
     \\-h, --help                 Display this message and exit.
     \\    --dependencies         Print a list of the dependencies and versions and exit.
     \\    --colors               Print a list of all the named colors and exit.
     \\    --config-file <Path>   The path to the config file (default: "$XDG_CONFIG_HOME/walrus-bar/config.ini")
-    \\-w, --width <Size>         The window's width (minimum: {}) (full screen width if not specified)
-    \\-l, --height <Size>        The window's height (minimum: {}) (default: {})
-    //\\-t, --title <String>       The window's title (default: OS Process Name (likely 'walrus-bar'))
     \\
-    \\--text-color <Color>       The default text colors (default: {s})
-    \\--background-color <Color> The default background color (default: {s})
-    \\
-, .{ minimum_window_width, minimum_window_height, default_window_height, colors.comptimeColorToString(default_text_color), colors.comptimeColorToString(default_background_color) }) ++
+++ generateHelpMessageComptime(General) ++
     (if (options.clock_enabled) generateHelpMessageComptime(ClockConfig) else "") ++
     (if (options.battery_enabled) generateHelpMessageComptime(BatteryConfig) else "") ++
     (if (options.brightness_enabled) generateHelpMessageComptime(BrightnessConfig) else "") ++
@@ -388,7 +391,7 @@ const help_message_prelude = std.fmt.comptimePrint(
     \\      - Color: A color by name (`--colors` to get options) or by hex code (starting with '#')
     \\      - String: A string of valid UTF-8 characters
     \\      - Character: A single valid UTF-8 character (can be multiple bytes)
-    \\      - Path: A valid absolute file system path
+    \\      - Path: A valid absolute or relative file system path
     \\      - Size: An amount of pixels
     \\      - u8: A number between 0 and 255 inclusive.
     \\
@@ -470,22 +473,21 @@ fn parseString(str: []const u8) ParseStringError![]const u8 {
     return str;
 }
 
-const ParsePathError = error{
-    @"Path too long",
-    @"Failed to resolve real path",
-};
+const ParsePathError = posix.RealPathError;
 
 fn parsePath(path: []const u8) ParsePathError!Path {
     var out_path = Path{};
 
-    const real_path = std.fs.realpath(path, &out_path.buffer) catch |err| {
+    const real_path = fs.realpath(path, &out_path.buffer) catch |err| {
         log.warn("Failed to resolve real path with error: {s}", .{@errorName(err)});
-        return error.@"Failed to resolve real path";
+        return err;
     };
+    assert(fs.path.isAbsolute(real_path));
+    assert(real_path.len <= max_path_bytes);
 
     out_path.resize(real_path.len) catch unreachable;
 
-    return Path.fromSlice(path) catch return error.@"Path too long";
+    return out_path;
 }
 
 const ParserCharacterError = error{

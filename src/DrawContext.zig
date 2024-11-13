@@ -380,7 +380,7 @@ pub fn draw(draw_context: *DrawContext) void {
 
 pub const DrawBitmapArgs = struct {
     /// The glyph to draw
-    glyph: *FreeTypeContext.Glyph,
+    glyph: *const FreeTypeContext.Glyph,
 
     /// Color to color glyph
     text_color: Color,
