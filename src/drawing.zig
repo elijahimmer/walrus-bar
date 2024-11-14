@@ -49,6 +49,7 @@ pub const Rect = struct {
     width: Size,
     height: Size,
 
+    /// Returns true if the `self` rect fully contains the `inner` rect
     pub fn contains(self: Rect, inner: Rect) bool {
         return (self.x <= inner.x) and
             (self.y <= inner.y) and
@@ -57,6 +58,8 @@ pub const Rect = struct {
             (self.x + self.width >= inner.x + inner.width) and
             (self.y + self.height >= inner.y + inner.height);
     }
+
+    /// Returns true if the `self` rect contains the point
     pub fn containsPoint(self: Rect, point: Point) bool {
         return (self.x <= point.x) and
             (self.y <= point.y) and
@@ -64,6 +67,13 @@ pub const Rect = struct {
             (self.y + self.height >= point.y);
     }
 
+    /// Returns if the rect contains the given local point.
+    pub fn containsLocalPoint(self: Rect, point: Point) bool {
+        return (self.width <= point.x) and
+            (self.height <= point.y);
+    }
+
+    /// Asserts that the `self` rect fully contains the `inner` rect
     pub fn assertContains(self: Rect, inner: Rect) void {
         assert(self.x <= inner.x);
         assert(self.y <= inner.y);
@@ -73,6 +83,7 @@ pub const Rect = struct {
         assert(self.y + self.height >= inner.y + inner.height);
     }
 
+    /// Asserts that the `self` rect fully contains the point.
     pub fn assertContainsPoint(self: Rect, point: Point) void {
         assert(self.x <= point.x);
         assert(self.y <= point.y);
@@ -80,6 +91,7 @@ pub const Rect = struct {
         assert(self.y + self.height >= point.y);
     }
 
+    /// asserts that the `self` rect fully contains the `inner` circle
     pub fn assertContainsCircle(self: Rect, inner: Circle) void {
         const circle_bb = inner.boundingBox();
 
@@ -191,13 +203,19 @@ pub const Rect = struct {
         };
     }
 
+    /// Rects containing the padding on each side.
     pub const ReturnPaddingResult = struct {
+        /// the padding to the north
         north: Rect,
+        /// the padding to the south
         south: Rect,
+        /// the padding to the east
         east: Rect,
+        /// the padding to the west
         west: Rect,
     };
 
+    /// Returns a series of rects that together make up the padding of the given rect.
     pub fn returnPadding(self: Rect, padding: Padding) ReturnPaddingResult {
         return .{
             .north = .{
@@ -227,6 +245,7 @@ pub const Rect = struct {
         };
     }
 
+    /// Draws all the area of the padding in the given rect.
     pub fn drawPadding(self: Rect, draw_context: *const DrawContext, color: Color, padding: Padding) void {
         const rects = self.returnPadding(padding);
 
@@ -241,6 +260,7 @@ pub const Rect = struct {
         rects.south.drawArea(draw_context, color);
     }
 
+    /// Draws the area of the rectangle in the given color
     pub fn drawArea(self: Rect, draw_context: *const DrawContext, color: Color) void {
         const x_min = self.x;
         const y_min = self.y;
@@ -256,6 +276,7 @@ pub const Rect = struct {
         }
     }
 
+    /// like `drawArea`, but puts the color compositely.
     pub fn drawAreaComposite(self: Rect, draw_context: *const DrawContext, color: Color) void {
         for (0..self.height) |y_coord| {
             for (0..self.width) |x_coord| {
@@ -267,6 +288,7 @@ pub const Rect = struct {
         }
     }
 
+    /// Draws the outline of the given rect in the given color
     pub fn drawOutline(self: Rect, draw_context: *const DrawContext, color: Color) void {
         const x_min = self.x;
         const y_min = self.y;
@@ -290,6 +312,7 @@ pub const Rect = struct {
         }
     }
 
+    /// damages the given rect's outlines.
     pub fn damageOutline(self: Rect, draw_context: *const DrawContext) void {
         draw_context.surface.?.damageBuffer(self.x, self.y, self.width, 1);
         draw_context.surface.?.damageBuffer(self.x, self.y, 1, self.height);
@@ -297,6 +320,7 @@ pub const Rect = struct {
         draw_context.surface.?.damageBuffer(self.x, self.y + self.height, self.width, 1);
     }
 
+    /// Draw a pixel at the given `area_local_point`, in the given rect, in the given color.
     pub fn putPixel(self: Rect, draw_context: *const DrawContext, area_local_point: Point, color: Color) void {
         const x_coord = self.x + area_local_point.x;
         const y_coord = self.y + area_local_point.y;
@@ -307,6 +331,7 @@ pub const Rect = struct {
         draw_context.screen[@as(usize, y_coord) * window_width + x_coord] = color;
     }
 
+    /// Draw a pixel at the given `area_local_point`, in the given rect, in the given color composited with the color already there.
     pub fn putComposite(
         self: Rect,
         draw_context: *const DrawContext,
@@ -328,22 +353,23 @@ pub const Rect = struct {
     }
 };
 
+/// A circle on the screen.
 pub const Circle = struct {
-    r: Size,
+    /// The diameter of the circle going through the center.
+    d: Size,
+    /// the x coord of the center of the circle.
     x: Size,
+    /// the y coord of the center of the circle.
     y: Size,
-    odd_width: bool,
 
+    /// returns the largest circle that fits inside of the given rect.
     pub fn largestCircle(rect: Rect) Circle {
-        const diamiter = @min(rect.width, rect.height);
-
-        const radius = diamiter / 2;
+        const diameter = @min(rect.width, rect.height);
 
         const circle = Circle{
-            .r = radius,
-            .x = rect.x + radius,
-            .y = rect.y + radius,
-            .odd_width = diamiter % 2 > 0,
+            .d = diameter,
+            .x = rect.x + diameter / 2,
+            .y = rect.y + diameter / 2,
         };
 
         rect.assertContainsCircle(circle);
@@ -351,22 +377,29 @@ pub const Circle = struct {
         return circle;
     }
 
+    /// return the smallest rect that completely contains the circle.
     pub fn boundingBox(self: Circle) Rect {
         return .{
-            .x = self.x - self.r,
-            .y = self.y - self.r,
-            .width = self.r * 2 + @intFromBool(self.odd_width),
-            .height = self.r * 2 + @intFromBool(self.odd_width),
+            .x = self.x - self.d / 2,
+            .y = self.y - self.d / 2,
+            .width = self.d,
+            .height = self.d,
         };
     }
 
+    /// draws the outline of the given circle.
     pub fn drawOutline(self: Circle, draw_context: *const DrawContext, color: Color) void {
-        var t1: Size = self.r / 16;
-        var x: Size = self.r;
+        self.drawOutlineWithin(draw_context, self.boundingBox(), color);
+    }
+
+    /// draws the outline of the given circle only within the given area.
+    pub fn drawOutlineWithin(self: Circle, draw_context: *const DrawContext, area: Rect, color: Color) void {
+        var t1: Size = self.d / 32;
+        var x: Size = self.d / 2;
         var y: Size = 0;
 
         while (x >= y) {
-            self.reflectPoint(draw_context, .{
+            self.reflectPoint(draw_context, area, .{
                 .x = x,
                 .y = y,
             }, color);
@@ -380,49 +413,65 @@ pub const Circle = struct {
         }
     }
 
-    fn reflectPoint(self: Circle, draw_context: *const DrawContext, point: Point, color: Color) void {
-        const bounding_box = self.boundingBox();
-        bounding_box.putPixel(draw_context, .{
-            .x = self.r + point.x,
-            .y = self.r + point.y,
-        }, color);
-        bounding_box.putPixel(draw_context, .{
-            .x = self.r - point.x,
-            .y = self.r + point.y,
-        }, color);
-        bounding_box.putPixel(draw_context, .{
-            .x = self.r - point.x,
-            .y = self.r - point.y,
-        }, color);
-        bounding_box.putPixel(draw_context, .{
-            .x = self.r + point.x,
-            .y = self.r - point.y,
-        }, color);
-        bounding_box.putPixel(draw_context, .{
-            .x = self.r + point.y,
-            .y = self.r + point.x,
-        }, color);
-        bounding_box.putPixel(draw_context, .{
-            .y = self.r - point.x,
-            .x = self.r + point.y,
-        }, color);
-        bounding_box.putPixel(draw_context, .{
-            .y = self.r - point.x,
-            .x = self.r - point.y,
-        }, color);
-        bounding_box.putPixel(draw_context, .{
-            .y = self.r + point.x,
-            .x = self.r - point.y,
-        }, color);
+    /// internal use of drawOutlineWithin to put point on all symmetric points.
+    fn reflectPoint(self: Circle, draw_context: *const DrawContext, area: Rect, point: Point, color: Color) void {
+        const base = self.d / 2;
+
+        const one = Point{
+            .x = base + point.x,
+            .y = base + point.y,
+        };
+
+        const two = Point{
+            .x = base - point.x,
+            .y = base + point.y,
+        };
+
+        const three = Point{
+            .x = base - point.x,
+            .y = base - point.y,
+        };
+        const four = Point{
+            .x = base + point.x,
+            .y = base - point.y,
+        };
+        const five = Point{
+            .x = base + point.y,
+            .y = base + point.x,
+        };
+        const six = Point{
+            .y = base - point.x,
+            .x = base + point.y,
+        };
+        const seven = Point{
+            .y = base - point.x,
+            .x = base - point.y,
+        };
+        const eight = Point{
+            .y = base + point.x,
+            .x = base - point.y,
+        };
+
+        const draw_area = self.boundingBox().intersection(area) orelse return;
+
+        inline for (.{
+            one, two, three, four, five, six, seven, eight,
+        }) |section| {
+            if (draw_area.containsPoint(section)) {
+                draw_area.putPixel(draw_context, section, color);
+            }
+        }
     }
 
+    /// draws the area of the given circle in the given color
     pub fn drawArea(self: Circle, draw_context: *const DrawContext, color: Color) void {
         self.drawAreaWithin(draw_context, self.boundingBox(), color);
     }
 
+    /// like drawArea, but only draws points within the given Rect
     pub fn drawAreaWithin(self: Circle, draw_context: *const DrawContext, area: Rect, color: Color) void {
-        var t1: Size = self.r / 16;
-        var x: Size = self.r;
+        var t1: Size = self.d / 32;
+        var x: Size = self.d / 2;
         var y: Size = 0;
 
         while (x >= y) {
@@ -440,32 +489,34 @@ pub const Circle = struct {
         }
     }
 
-    pub fn reflectPointFillIn(self: Circle, draw_context: *const DrawContext, area: Rect, point: Point, color: Color) void {
+    /// internal function used by drawOutlineWithin for taking a point and drawing the area.
+    fn reflectPointFillIn(self: Circle, draw_context: *const DrawContext, area: Rect, point: Point, color: Color) void {
         const bounding_box = self.boundingBox();
+        const odd_width: u1 = @intCast(self.d & 1);
 
         const top_rect = Rect{
             .x = self.x - point.x,
             .y = self.y - point.y,
-            .width = point.x * 2 + @intFromBool(self.odd_width),
+            .width = point.x * 2 + odd_width,
             .height = 1,
         };
         const middle_top_rect = Rect{
             .x = self.x - point.y,
             .y = self.y - point.x,
-            .width = point.y * 2 + @intFromBool(self.odd_width),
+            .width = point.y * 2 + odd_width,
             .height = 1,
         };
         // move the lower ones up to avoid a weird off by 1 error when it is a even width.
         const middle_bottom_rect = Rect{
             .x = self.x - point.x,
-            .y = self.y + point.y - @intFromBool(!self.odd_width),
-            .width = point.x * 2 + @intFromBool(self.odd_width),
+            .y = self.y + point.y + odd_width - 1,
+            .width = point.x * 2 + odd_width,
             .height = 1,
         };
         const bottom_rect = Rect{
             .x = self.x - point.y,
-            .y = self.y + point.x - @intFromBool(!self.odd_width),
-            .width = point.y * 2 + @intFromBool(self.odd_width),
+            .y = self.y + point.x + odd_width - 1,
+            .width = point.y * 2 + odd_width,
             .height = 1,
         };
 
@@ -482,6 +533,7 @@ pub const Circle = struct {
         }
     }
 
+    /// damages the circle's area.
     pub fn damageArea(self: Circle, draw_context: *const DrawContext) void {
         // TODO: Make some accurate damage box.
         draw_context.damageArea(self.boundingBox());
