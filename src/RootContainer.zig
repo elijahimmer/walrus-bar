@@ -113,10 +113,21 @@ pub fn click(self: *RootContainer, button: MouseButton) void {
     }
 }
 
-pub fn init(area: Rect) RootContainer {
+pub const InitArgs = struct {
+    wayland_context: *WaylandContext,
+    output: *wl.Output,
+    output_name: u32,
+};
+
+pub fn init(args: InitArgs) RootContainer {
     var root_container = RootContainer{
-        .area = area,
+        .area = undefined,
+        .output_context = OutputContext.init(args.wayland_context, args.output, args.output_name),
     };
+
+    if (args.wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip failed!");
+
+    const area = root_container.area;
 
     if (options.clock_enabled) {
         var clock = Clock.init(
@@ -225,6 +236,9 @@ const config = &Config.global;
 const colors = @import("colors.zig");
 
 const DrawContext = @import("DrawContext.zig");
+const OutputContext = @import("OutputContext.zig");
+const WaylandContext = @import("WaylandContext.zig");
+
 const Workspaces = @import("workspaces/Workspaces.zig");
 const Clock = @import("Clock.zig");
 const Battery = @import("Battery.zig");
@@ -238,6 +252,10 @@ const Size = drawing.Size;
 const seat_utils = @import("seat_utils.zig");
 const MouseButton = seat_utils.MouseButton;
 const Axis = seat_utils.Axis;
+
+const wayland = @import("wayland");
+const wl = wayland.client.wl;
+const zwlr = wayland.client.zwlr;
 
 const std = @import("std");
 

@@ -2,7 +2,7 @@
 //! The names are only valid when the pointer associated is not null.
 
 pub const WaylandContext = @This();
-pub const OutputsArray = ArrayListUnmanaged(DrawContext);
+pub const OutputsArray = ArrayListUnmanaged(Output);
 pub const DefaultOutputArraySize: usize = 2;
 
 /// The Wayland connection itself.
@@ -54,7 +54,8 @@ pointer: ?*wl.Pointer = null,
 
 /// The last surface to have a motion on it.
 /// TODO: Remove this and put it pointer local storage when we support multiple.
-last_motion_surface: ?*DrawContext = null,
+/// TODO: Make this not a pointer so on output remove it is still the correct output.
+last_motion_surface: ?*Output = null,
 
 /// Whether or not the program should still be running.
 running: bool = true,
@@ -87,7 +88,7 @@ pub fn deinit(self: *WaylandContext) void {
     if (self.pointer) |pointer| pointer.release();
     if (self.seat) |seat| seat.release();
 
-    for (self.outputs.items) |*output| output.deinit(self.allocator);
+    for (self.outputs.items) |*output| output.deinit();
 
     if (self.shm) |shm| shm.destroy();
     if (self.layer_shell) |layer_shell| layer_shell.destroy();
@@ -103,7 +104,7 @@ pub fn deinit(self: *WaylandContext) void {
 ///
 /// This panics if the checker returns true on two or more outputs, so the identifier
 ///     should be output unique
-pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const DrawContext, T) bool) ?u32 {
+pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const Output, T) bool) ?u32 {
     var output_idx: ?u32 = null;
 
     for (self.outputs.items, 0..) |*output, index| {
@@ -137,11 +138,12 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                 log_local.debug("Output Added with id #{}", .{global.name});
 
                 const output = registry.bind(global.name, wl.Output, wl.Output.generated_version) catch return;
-                output.setListener(*WaylandContext, DrawContext.outputListener, context);
+                output.setListener(*WaylandContext, OutputContext.outputListener, context);
 
-                context.outputs.append(context.allocator, DrawContext.init(.{
+                context.outputs.append(context.allocator, Output.init(.{
                     .output = output,
-                    .id = global.name,
+                    .output_name = global.name,
+                    .wayland_context = context,
                 })) catch @panic("Too many outputs!");
 
                 return;
@@ -175,14 +177,14 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
             log_local.debug("unknown global ignored: '{s}'", .{global.interface});
         },
         .global_remove => |global| {
-            for (context.outputs.items, 0..) |*draw_context, idx| {
-                const output_context = &draw_context.output_context;
-                if (output_context.id == global.name) {
-                    log_local.debug("Output '{s}' was removed", .{output_context.name});
-                    draw_context.deinit(context.allocator);
+            for (context.outputs.items, 0..) |*root_container, idx| {
+                const output_name = root_container.output_context.output_name;
+                if (output_name == global.name) {
+                    log_local.debug("Output '{s}' was removed", .{output_name});
+                    root_container.deinit();
 
                     const ctx = context.outputs.swapRemove(idx);
-                    assert(ctx.output_context.id == output_context.id);
+                    assert(ctx.output_context.output_name == output_name);
 
                     return;
                 }
@@ -215,7 +217,8 @@ pub fn shmListener(shm: *wl.Shm, event: wl.Shm.Event, has_argb8888: *bool) void 
 }
 
 const Clock = @import("Clock.zig");
-const DrawContext = @import("DrawContext.zig");
+const Output = @import("Output.zig");
+const OutputContext = @import("OutputContext.zig");
 const seat_utils = @import("seat_utils.zig");
 const TextBox = @import("TextBox.zig");
 const drawing = @import("drawing.zig");

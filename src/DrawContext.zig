@@ -50,16 +50,6 @@ pub const OutputContext = struct {
     name: []const u8 = undefined,
 };
 
-pub fn damage(draw_context: *DrawContext, area: Rect) void {
-    draw_context.current_area.assertContains(area);
-
-    if (options.track_damage) {
-        draw_context.damage_list.append(area) catch @panic("the Damage list is full, increase list size.");
-    } else {
-        draw_context.surface.?.damageBuffer(area.x, area.y, area.width, area.height);
-    }
-}
-
 pub const InitArgs = struct {
     output: *wl.Output,
     id: u32,
@@ -263,80 +253,6 @@ pub fn surfaceListener(surface: *wl.Surface, event: wl.Surface.Event, wayland_co
     switch (event) {
         // TODO: Use this for scaling and transform
         .enter, .leave, .preferred_buffer_scale, .preferred_buffer_transform => {},
-    }
-}
-
-pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_context: *WaylandContext) void {
-    const output_checker = struct {
-        pub fn checker(draw_context: *const DrawContext, target: *wl.Output) bool {
-            return draw_context.output_context.output == target;
-        }
-    }.checker;
-
-    const output_idx = wayland_context.findOutput(*wl.Output, output, &output_checker) orelse @panic("Output not found!");
-
-    var draw_context = &wayland_context.outputs.items[output_idx];
-    var output_context = &draw_context.output_context;
-
-    if (output_context.has_name) {
-        log.debug("Output '{s}' (id #{}) had event {s}", .{ output_context.name, output_context.id, @tagName(event) });
-    } else {
-        log.debug("Output id #{} had event {s}", .{ output_context.id, @tagName(event) });
-    }
-
-    switch (event) {
-        .geometry => |geometry| {
-            assert(geometry.physical_width >= 0);
-            assert(geometry.physical_height >= 0);
-
-            output_context.changed = output_context.physical_height != geometry.physical_height or output_context.physical_width != geometry.physical_width;
-
-            output_context.physical_height = @intCast(geometry.physical_height);
-            output_context.physical_width = @intCast(geometry.physical_width);
-            output_context.has_geometry = true;
-        },
-        .mode => |mode| {
-            assert(mode.width >= 0);
-            assert(mode.height >= 0);
-
-            output_context.changed = output_context.height != mode.height or output_context.width != mode.width;
-
-            output_context.height = @intCast(mode.height);
-            output_context.width = @intCast(mode.width);
-            output_context.has_mode = true;
-        },
-        .name => |name| {
-            assert(!output_context.has_name); // protocol says name can only be set one.
-            output_context.has_name = true;
-
-            const name_str = mem.span(name.name);
-            assert(name_str.len > 0);
-
-            const name_str_owned = wayland_context.allocator.alloc(u8, name_str.len) catch |err| panic("error: {s}", .{@errorName(err)});
-            @memcpy(name_str_owned, name_str);
-
-            output_context.name = name_str_owned;
-        },
-        .scale, .description => {},
-        .done => {
-            assert(output_context.has_geometry);
-            assert(output_context.has_name);
-            assert(output_context.has_mode);
-
-            if (output_context.height > 0 and output_context.width > 0) {
-                if (output_context.changed) {
-                    log.info("Output '{s}' changed, valid height.", .{output_context.name});
-                    draw_context.outputChanged(wayland_context) catch |err| panic("error: {s}", .{@errorName(err)});
-                }
-            } else {
-                if (output_context.changed) {
-                    log.info("Output '{s}' changed, zero size.", .{output_context.name});
-                    // TODO: shouldn't render (zero size)-- make sure it doesn't.
-                }
-            }
-
-            output_context.changed = false;
-        },
     }
 }
 

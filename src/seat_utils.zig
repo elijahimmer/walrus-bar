@@ -24,11 +24,11 @@ pub fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, wayland_context: *Wayl
 pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_context: *WaylandContext) void {
     assert(wayland_context.pointer != null);
     assert(pointer == wayland_context.pointer.?);
-    const log_local = std.log.scoped(.Pointer);
+    //const log_local = std.log.scoped(.Pointer);
 
     const checker = struct {
-        pub fn checker(draw_context: *const DrawContext, target: *wl.Surface) bool {
-            return draw_context.surface == target;
+        pub fn checker(output: *const Output, target: *wl.Surface) bool {
+            return output.surface == target;
         }
     }.checker;
 
@@ -39,11 +39,11 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
             if (enter.surface) |surface| {
                 const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = &wayland_context.outputs.items[output_idx];
-                wayland_context.last_motion_surface = draw_context;
+                const output = &wayland_context.outputs.items[output_idx];
+                wayland_context.last_motion_surface = output;
 
-                assert(draw_context.root_container != null);
-                const root_container = &draw_context.root_container.?;
+                assert(output.root_container != null);
+                const root_container = &output.root_container.?;
 
                 const point = Point{
                     .x = @intCast(@max(enter.surface_x.toInt(), 0)),
@@ -55,7 +55,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                         cursor_shape_manager,
                         pointer,
                     ) catch |err| {
-                        log.warn("Failed to get pointer device for surface '{s}' with: {s}", .{ draw_context.output_context.name, @errorName(err) });
+                        log.warn("Failed to get pointer device for surface '{s}' with: {s}", .{ output.output_context.name_str.constSlice(), @errorName(err) });
                         break :set_pointer;
                     };
                     defer pointer_device.destroy();
@@ -64,13 +64,13 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
                 if (root_container.area.containsPoint(point)) root_container.motion(point);
             } else {
-                log_local.warn("Cursor entered but not on a surface?", .{});
+                //log_local.warn("Cursor entered but not on a surface?", .{});
             }
         },
         .motion => |motion| {
-            if (wayland_context.last_motion_surface) |draw_context| {
-                assert(draw_context.root_container != null);
-                const root_container = &draw_context.root_container.?;
+            if (wayland_context.last_motion_surface) |output| {
+                assert(output.root_container != null);
+                const root_container = &output.root_container.?;
 
                 const point = Point{
                     .x = @intCast(@max(motion.surface_x.toInt(), 0)),
@@ -79,7 +79,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
                 if (root_container.area.containsPoint(point)) root_container.motion(point);
             } else {
-                log_local.warn("Cursor motion but not on a surface?", .{});
+                //log_local.warn("Cursor motion but not on a surface?", .{});
             }
         },
         .leave => |leave| {
@@ -92,7 +92,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
                 draw_context.root_container.?.leave();
             } else {
-                log_local.warn("Cursor left but not on a surface?", .{});
+                //log_local.warn("Cursor left but not on a surface?", .{});
             }
         },
         .button => |button| {
@@ -116,7 +116,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                         assert(draw_context.root_container != null);
                         draw_context.root_container.?.click(@enumFromInt(button.button));
                     } else {
-                        log_local.warn("Cursor motion but not on a surface?", .{});
+                        //log_local.warn("Cursor motion but not on a surface?", .{});
                     }
                 },
             }
@@ -129,7 +129,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 assert(draw_context.root_container != null);
                 draw_context.root_container.?.scroll(axis.axis, axis.value.toInt());
             } else {
-                log_local.warn("Scroll event but not on a surface?", .{});
+                //log_local.warn("Scroll event but not on a surface?", .{});
             }
         },
         // TODO: Implement input frames.
@@ -147,7 +147,7 @@ pub const MouseButton = enum(u16) {
 };
 
 const WaylandContext = @import("WaylandContext.zig");
-const DrawContext = @import("DrawContext.zig");
+const Output = @import("Output.zig");
 
 const drawing = @import("drawing.zig");
 const Point = drawing.Point;
@@ -162,5 +162,6 @@ const std = @import("std");
 
 const assert = std.debug.assert;
 const panic = std.debug.panic;
-const log = std.log.scoped(.@"walrus-bar");
 const maxInt = std.math.maxInt;
+
+const log = std.log.scoped(.Seat);
