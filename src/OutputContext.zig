@@ -1,9 +1,11 @@
 pub const OutputContext = @This();
 
 pub const NAME_STR_LEN = 16;
+/// plus 1 for null byte
+pub const NameStr = BoundedArray(u8, NAME_STR_LEN + 1);
 
 output: *wl.Output,
-output_name: u32,
+id: u32,
 
 /// whether or not the output mode event has been handled
 has_mode: bool = false,
@@ -21,16 +23,17 @@ physical_width: Size = undefined,
 
 /// whether or not the output name event has been handled
 has_name: bool = false,
-/// Holds the output name as a string, any characters after 64 will be ignored.
+
+/// Holds the output name as a string, any characters past the limit will be ignored.
 /// Only valid when `has_name` is true.
-name_str: BoundedArray(u8, NAME_STR_LEN) = .{},
+name_str: NameStr = .{},
 
 /// whether or not the output has changed since last
 changed: bool = true,
 
 pub const InitArgs = struct {
     output: *wl.Output,
-    output_name: u32,
+    id: u32,
     wayland_context: *WaylandContext,
 };
 
@@ -39,7 +42,7 @@ pub fn init(args: InitArgs) OutputContext {
 
     return .{
         .output = args.output,
-        .output_name = args.output_name,
+        .id = args.id,
     };
 }
 
@@ -87,15 +90,14 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
         }
     }.checker;
 
-    const output_idx = wayland_context.findOutput(*wl.Output, output, output_checker) orelse @panic("Output not found!");
+    const output_info = wayland_context.findOutput(*wl.Output, output, output_checker) orelse @panic("Output not found!");
 
-    var root_container = &wayland_context.outputs.items[output_idx];
-    var output_context = &root_container.output_context;
+    var output_context = &output_info.output_context;
 
     if (output_context.has_name) {
-        log.debug("Output '{s}' (id #{}) had event {s}", .{ output_context.name_str, output_context.output_name, @tagName(event) });
+        log.debug("Output '{s}' (id #{}) had event {s}", .{ output_context.name_str.constSlice(), output_context.id, @tagName(event) });
     } else {
-        log.debug("Output id #{} had event {s}", .{ output_context.output_name, @tagName(event) });
+        log.debug("Output id #{} had event {s}", .{ output_context.id, @tagName(event) });
     }
 
     switch (event) {
@@ -124,7 +126,7 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
             output_context.has_mode = true;
         },
         .name => |name| {
-            assert(!output_context.has_name); // protocol says name can only be set one.
+            assert(!output_context.has_name); // protocol says name can only be set once.
             assert(output_context.name_str.len == 0);
             output_context.has_name = true;
 
@@ -134,6 +136,7 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
             const name_str_len = @min(name_str.len, output_context.name_str.capacity());
 
             output_context.name_str.appendSliceAssumeCapacity(name_str[0..name_str_len]);
+            output_context.name_str.appendAssumeCapacity(0);
         },
         .scale, .description => {},
         .done => {
@@ -143,12 +146,12 @@ pub fn outputListener(output: *wl.Output, event: wl.Output.Event, wayland_contex
 
             if (output_context.screen_height > 0 and output_context.screen_width > 0) {
                 if (output_context.changed) {
-                    log.info("Output '{s}' changed, valid height.", .{output_context.name_str.constSlice()});
-                    //output_context.outputChanged(wayland_context) catch |err| panic("error: {s}", .{@errorName(err)});
+                    log.info("Output '{s}' (id #{}) changed, valid height.", .{ output_context.name_str.constSlice(), output_context.id });
+                    output_info.outputChanged(wayland_context) catch |err| panic("error: {s}", .{@errorName(err)});
                 }
             } else {
                 if (output_context.changed) {
-                    log.info("Output '{s}' changed, zero size.", .{output_context.name_str.constSlice()});
+                    log.info("Output '{s}' (id #{}) changed, zero size.", .{ output_context.name_str.constSlice(), output_context.id });
                     // TODO: shouldn't render (zero size)-- make sure it doesn't.
                 }
             }

@@ -5,6 +5,8 @@ pub const Point = struct {
     x: Size,
     y: Size,
 
+    pub const ZERO = Point{ .x = 0, .y = 0 };
+
     pub fn extendTo(self: Point, other: Point) Rect {
         const x_min, const x_max = .{ @min(self.x, other.x), @max(self.x, other.x) };
         const y_min, const y_max = .{ @min(self.y, other.y), @max(self.y, other.y) };
@@ -48,6 +50,13 @@ pub const Rect = struct {
     y: Size,
     width: Size,
     height: Size,
+
+    pub const ZERO = Rect{
+        .x = 0,
+        .y = 0,
+        .width = 0,
+        .height = 0,
+    };
 
     /// Returns true if the `self` rect fully contains the `inner` rect
     pub fn contains(self: Rect, inner: Rect) bool {
@@ -314,10 +323,10 @@ pub const Rect = struct {
 
     /// damages the given rect's outlines.
     pub fn damageOutline(self: Rect, draw_context: *const DrawContext) void {
-        draw_context.surface.?.damageBuffer(self.x, self.y, self.width, 1);
-        draw_context.surface.?.damageBuffer(self.x, self.y, 1, self.height);
-        draw_context.surface.?.damageBuffer(self.x + self.width, self.y, 1, self.height);
-        draw_context.surface.?.damageBuffer(self.x, self.y + self.height, self.width, 1);
+        draw_context.surface.damageBuffer(self.x, self.y, self.width, 1);
+        draw_context.surface.damageBuffer(self.x, self.y, 1, self.height);
+        draw_context.surface.damageBuffer(self.x + self.width, self.y, 1, self.height);
+        draw_context.surface.damageBuffer(self.x, self.y + self.height, self.width, 1);
     }
 
     /// Draw a pixel at the given `area_local_point`, in the given rect, in the given color.
@@ -575,7 +584,7 @@ pub const Widget = struct {
 
         motion: ?*const fn (*Widget, Point) void,
         leave: ?*const fn (*Widget) void,
-        click: ?*const fn (*Widget, Point, MouseButton) void,
+        click: ?*const fn (*Widget, MouseButton) void,
         scroll: ?*const fn (*Widget, Axis, i32) void,
     };
     vtable: *const VTable,
@@ -583,6 +592,7 @@ pub const Widget = struct {
     area: Rect,
 
     last_motion: ?Point = null,
+    last_motion_time: ?Timer = null,
 
     /// This should be true anytime the widget needs to redraw.
     /// So if the area is changed or the glyph needs to for other reasons.
@@ -611,7 +621,13 @@ pub const Widget = struct {
 
     /// Tells the widget the mouse has moved in
     pub inline fn motion(self: *Widget, point: Point) void {
-        defer self.last_motion = point;
+        defer {
+            self.last_motion = point;
+            self.last_motion_time = Timer.start() catch |err| switch (err) {
+                error.TimerUnsupported => null,
+            };
+        }
+
         self.area.assertContainsPoint(point);
         if (self.vtable.motion) |motion_fn| {
             motion_fn(self, point);
@@ -621,11 +637,14 @@ pub const Widget = struct {
     /// Tells the widget the mouse has moved in
     pub inline fn leave(self: *Widget) void {
         defer self.last_motion = null;
+        defer self.last_motion_time = null;
+
         if (self.vtable.leave) |leave_fn| leave_fn(self);
     }
 
-    pub inline fn click(self: *Widget, point: Point, button: MouseButton) void {
-        if (self.vtable.click) |click_fn| click_fn(self, point, button);
+    pub inline fn click(self: *Widget, button: MouseButton) void {
+        assert(self.last_motion != null);
+        if (self.vtable.click) |click_fn| click_fn(self, button);
     }
 
     pub inline fn scroll(self: *Widget, axis: Axis, discrete: i32) void {
@@ -638,6 +657,7 @@ pub const Widget = struct {
 
     pub fn generateVTable(Outer: type) *const VTable {
         comptime {
+            assert(meta.hasMethod(Outer, "deinit"));
             assert(meta.hasMethod(Outer, "setArea"));
             assert(meta.hasMethod(Outer, "getWidth"));
         }
@@ -676,21 +696,22 @@ pub const Widget = struct {
                 self.motion(point);
             }
 
-            pub fn click(widget: *Widget, point: Point, button: MouseButton) void {
-                const self: *Outer = @fieldParentPtr("widget", widget);
+            pub fn click(widget: *Widget, button: MouseButton) void {
+                assert(widget.last_motion != null);
 
-                self.click(point, button);
+                const self: *Outer = @fieldParentPtr("widget", widget);
+                self.click(button);
             }
 
             pub fn scroll(widget: *Widget, axis: Axis, discrete: i32) void {
-                const self: *Outer = @fieldParentPtr("widget", widget);
+                assert(widget.last_motion != null);
 
+                const self: *Outer = @fieldParentPtr("widget", widget);
                 self.scroll(axis, discrete);
             }
 
             pub fn leave(widget: *Widget) void {
                 const self: *Outer = @fieldParentPtr("widget", widget);
-
                 self.leave();
             }
 
@@ -728,5 +749,6 @@ const math = std.math;
 const meta = std.meta;
 
 const Allocator = std.mem.Allocator;
+const Timer = std.time.Timer;
 
 const assert = std.debug.assert;

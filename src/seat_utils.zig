@@ -24,7 +24,7 @@ pub fn seatListener(seat: *wl.Seat, event: wl.Seat.Event, wayland_context: *Wayl
 pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_context: *WaylandContext) void {
     assert(wayland_context.pointer != null);
     assert(pointer == wayland_context.pointer.?);
-    //const log_local = std.log.scoped(.Pointer);
+    const log_local = std.log.scoped(.Pointer);
 
     const checker = struct {
         pub fn checker(output: *const Output, target: *wl.Surface) bool {
@@ -37,9 +37,8 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
     switch (event) {
         .enter => |enter| {
             if (enter.surface) |surface| {
-                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
+                const output = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const output = &wayland_context.outputs.items[output_idx];
                 wayland_context.last_motion_surface = output;
 
                 assert(output.root_container != null);
@@ -62,9 +61,9 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                     pointer_device.setShape(enter.serial, .default);
                 }
 
-                if (root_container.area.containsPoint(point)) root_container.motion(point);
+                if (root_container.widget.area.containsPoint(point)) root_container.widget.motion(point);
             } else {
-                //log_local.warn("Cursor entered but not on a surface?", .{});
+                log_local.warn("Cursor entered but not on a surface?", .{});
             }
         },
         .motion => |motion| {
@@ -77,22 +76,20 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                     .y = @intCast(@max(motion.surface_y.toInt(), 0)),
                 };
 
-                if (root_container.area.containsPoint(point)) root_container.motion(point);
+                if (root_container.widget.area.containsPoint(point)) root_container.widget.motion(point);
             } else {
-                //log_local.warn("Cursor motion but not on a surface?", .{});
+                log_local.warn("Cursor motion but not on a surface?", .{});
             }
         },
         .leave => |leave| {
             if (leave.surface) |surface| {
-                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
+                const output = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = &wayland_context.outputs.items[output_idx];
+                assert(output.root_container != null);
 
-                assert(draw_context.root_container != null);
-
-                draw_context.root_container.?.leave();
+                output.root_container.?.widget.leave();
             } else {
-                //log_local.warn("Cursor left but not on a surface?", .{});
+                log_local.warn("Cursor left but not on a surface?", .{});
             }
         },
         .button => |button| {
@@ -106,7 +103,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 },
                 .right_click => {
                     if (builtin.mode == .Debug) {
-                        for (wayland_context.outputs.items) |*output| {
+                        for (wayland_context.outputs.slice()) |*output| {
                             output.full_redraw = true;
                         }
                     }
@@ -114,9 +111,9 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 else => {
                     if (wayland_context.last_motion_surface) |draw_context| {
                         assert(draw_context.root_container != null);
-                        draw_context.root_container.?.click(@enumFromInt(button.button));
+                        draw_context.root_container.?.widget.click(@enumFromInt(button.button));
                     } else {
-                        //log_local.warn("Cursor motion but not on a surface?", .{});
+                        log_local.warn("Cursor motion but not on a surface?", .{});
                     }
                 },
             }
@@ -127,9 +124,9 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
             if (wayland_context.last_motion_surface) |draw_context| {
                 assert(draw_context.root_container != null);
-                draw_context.root_container.?.scroll(axis.axis, axis.value.toInt());
+                draw_context.root_container.?.widget.scroll(axis.axis, axis.value.toInt());
             } else {
-                //log_local.warn("Scroll event but not on a surface?", .{});
+                log_local.warn("Scroll event but not on a surface?", .{});
             }
         },
         // TODO: Implement input frames.

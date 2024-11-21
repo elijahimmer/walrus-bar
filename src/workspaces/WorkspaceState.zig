@@ -18,6 +18,7 @@ pub const WorkspaceID = i32;
 pub var global = WorkspaceState{
     .rc = .{ .raw = 0 },
     .worker_thread = undefined,
+    .rwlock = .{},
     .workspaces = .{},
     .active_workspace = 0,
 };
@@ -26,7 +27,7 @@ pub var global = WorkspaceState{
 rc: std.atomic.Value(WorkspaceID),
 worker_thread: ?Thread,
 
-rwlock: Thread.RwLock = .{},
+rwlock: Thread.RwLock,
 
 workspaces: WorkspaceArray,
 active_workspace: WorkspaceID,
@@ -49,6 +50,8 @@ pub fn init(self: *WorkspaceState) !void {
     self.logged_service_not_found = false;
 
     if (self.worker_thread == null) {
+        self.rwlock = .{};
+        self.active_workspace = 0;
         self.worker_thread = try Thread.spawn(.{}, Impl.work, .{self});
         self.worker_thread.?.setName(workspaces_worker_name) catch |err| {
             // we don't really care about the name, just log the error
@@ -76,11 +79,22 @@ pub fn deinit(self: *WorkspaceState) void {
             log.debug("Joining Worker...", .{});
             thread.join();
             log.debug("Worker Joined.", .{});
+
+            self.worker_thread = null;
         } else {
             log.debug("Worker not started.", .{});
         }
 
-        self.* = undefined;
+        assert(self.rwlock.trylock());
+        self.rwlock.unlock();
+
+        self.* = .{
+            .rc = .{ .raw = 0 },
+            .worker_thread = null,
+            .rwlock = .{},
+            .workspaces = .{},
+            .active_workspace = 0,
+        };
     }
 }
 

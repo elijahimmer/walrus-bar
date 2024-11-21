@@ -1,4 +1,6 @@
-mkdir /tmp/brightness
+DIR=/tmp/walrus-bar/brightness
 
-echo 50 > /tmp/brightness/brightness
-echo 100 > /tmp/brightness/max_brightness
+mkdir $DIR
+
+echo 50 > $DIR/brightness
+echo 100 > $DIR/max_brightness

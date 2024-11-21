@@ -114,6 +114,8 @@ padding: Padding,
 
 /// The padding between the battery and the progress_bar.
 inner_padding: Size,
+
+/// True if the inner padding was config specified.
 inner_padding_was_specified: bool,
 
 /// The inner widget for dynamic dispatch and generic fields.
@@ -279,7 +281,12 @@ pub fn init(area: Rect, config: BatteryConfig) !Battery {
     return self;
 }
 
-/// Reads a file that only contains an int.
+pub fn motion(battery: *Battery, point: Point) void {
+    _ = battery;
+    _ = point;
+}
+
+/// Reads a file that only contains an unsigned int.
 fn readFileInt(comptime T: type, file: std.fs.File) !T {
     assert(@typeInfo(T) == .Int);
     assert(@typeInfo(T).Int.signedness == .unsigned);

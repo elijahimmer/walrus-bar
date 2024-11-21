@@ -1,5 +1,7 @@
-mkdir /tmp/battery
+DIR=/tmp/walrus-bar/battery
 
-echo 50 > /tmp/battery/energy_now
-echo 100 > /tmp/battery/energy_full
-echo discharging > /tmp/battery/status
+mkdir $DIR
+
+echo 50 > $DIR/energy_now
+echo 100 > $DIR/energy_full
+echo discharging > $DIR/status

@@ -28,13 +28,55 @@ pub fn main() !void {
                 log.warn("Roundtrip Failed with Invalid Request", .{});
                 break;
             },
+            .CONNRESET => {
+                log.warn("Connection reset. exiting...", .{});
+                break;
+            },
             else => |err| {
-                log.warn("Roundtrip Failed: {s}", .{@tagName(err)});
+                log.warn("Roundtrip Failed with {s}", .{@tagName(err)});
+                break;
             },
         }
     }
 
+    if (std.debug.runtime_safety) assertAllMemFdClosed();
+
     log.info("Shutting Down.", .{});
+}
+
+pub fn assertAllMemFdClosed() void {
+    log.info("Starting file leak test...", .{});
+
+    const memfd_dir = std.fs.openDirAbsoluteZ("/proc/self/fd", .{ .iterate = true }) catch |err| {
+        log.err("Failed to open directory holding open files with {s}", .{@errorName(err)});
+        return;
+    };
+
+    var memfd_dir_iter = memfd_dir.iterateAssumeFirstIteration();
+
+    var found_leaks = false;
+
+    while (memfd_dir_iter.next()) |entry| {
+        if (entry == null) break;
+        switch (entry.?.kind) {
+            // ignore all directories.
+            .directory => {},
+            else => {
+                if (std.mem.startsWith(u8, entry.?.name, "memfd:")) {
+                    log.warn("Failed to close mem file '{s}' which is a {s}", .{ entry.?.name, @tagName(entry.?.kind) });
+                } else {
+                    log.warn("Failed to close file '{s}' which is a {s}", .{ entry.?.name, @tagName(entry.?.kind) });
+                }
+
+                found_leaks = true;
+            },
+        }
+    } else |err| {
+        log.err("Failed to iterate open files directory with {s}", .{@errorName(err)});
+        return;
+    }
+
+    log.info("No leaks found!", .{});
 }
 
 test {

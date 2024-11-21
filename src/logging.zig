@@ -11,6 +11,8 @@ const other_logging_scopes = [_]@TypeOf(.enum_literal){
     .ParseConfig,
     .OutputContext,
     .Output,
+    .WaylandContext,
+    .ShmPool,
 };
 
 // These have build script specified logging levels.

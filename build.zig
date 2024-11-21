@@ -130,7 +130,7 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_cursor_shape_manager_v1", 1);
 
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml"); // needed by wlr-layer-shell
-    //scanner.generate("xdg_wm_base", 2);
+    scanner.generate("xdg_wm_base", 2);
 
     scanner.addSystemProtocol("wlr/unstable/wlr-layer-shell-unstable-v1.xml");
     scanner.generate("zwlr_layer_shell_v1", 4);

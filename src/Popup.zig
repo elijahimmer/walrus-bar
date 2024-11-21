@@ -2,20 +2,31 @@
 
 pub const Popup = @This();
 
-draw_context: *const DrawContext,
+wayland_context: *WaylandContext,
 
+full_redraw: bool = true,
+
+/// the wayland surface itself.
 surface: *wl.Surface,
+
+/// The xdg surface which is a popup
 xdg_surface: *xdg.Surface,
+
+/// The thing that says where the popup should be
 xdg_positioner: *xdg.Positioner,
+
+/// The actual popup
 xdg_popup: *xdg.Popup,
 
-shm_buffer: *wl.Buffer,
-shm_fd: posix.fd_t,
+/// The size of the window.
+window_size: Point = Point.ZERO,
 
-screen: []const Color,
+shm_pool: ShmPool,
 
-frame_callback: *wl.Callback,
+/// The callback to draw the next frame.
+frame_callback: ?*wl.Callback = null,
 
+/// The
 widget: TextBox,
 
 /// uses the area of the text_box_init_args for how big this should be.
@@ -191,23 +202,40 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
     }.checker;
 
     // if not found, return because the output likely isn't alive anymore and this callback is stale.
-    const output_idx = wayland_context.findOutput(
+    const output = wayland_context.findOutput(
         *wl.Callback,
         callback,
         &output_checker,
     ) orelse @panic("Output not found for drawing!");
 
-    const draw_context = &wayland_context.outputs.items[output_idx];
-    assert(draw_context.wayland_context == wayland_context);
-    assert(draw_context.popup != null);
+    const popup = &output.popup.?;
 
-    const popup = &draw_context.popup.?;
+    const buffer, const screen = popup.shm_pool.getBuffer();
 
+    _ = buffer;
+
+    var draw_context = DrawContext{
+        .surface = output.surface.?,
+        .window_area = output.window_size.extendTo(Point.ZERO),
+        .screen = screen,
+
+        .current_area = Rect.ZERO,
+
+        .full_redraw = output.full_redraw,
+    };
+    defer draw_context.deinit();
+    defer popup.full_redraw = false;
+
+    popup.widget.draw();
+
+    // commit the changes.
+    popup.surface.attach(popup.shm_buffer, 0, 0);
+
+    // make new frame callback
     popup.frame_callback.destroy();
     popup.frame_callback = popup.surface.frame() catch @panic("Failed Getting Frame Callback.");
     popup.frame_callback.setListener(*WaylandContext, nextFrame, wayland_context);
 
-    popup.surface.attach(popup.shm_buffer, 0, 0);
     popup.surface.commit();
 }
 
@@ -217,9 +245,12 @@ const colors = @import("colors.zig");
 const Color = colors.Color;
 
 const drawing = @import("drawing.zig");
+const Point = drawing.Point;
+const Rect = drawing.Rect;
 
 const TextBox = @import("TextBox.zig");
 
+const ShmPool = @import("ShmPool.zig");
 const WaylandContext = @import("WaylandContext.zig");
 const DrawContext = @import("DrawContext.zig");
 

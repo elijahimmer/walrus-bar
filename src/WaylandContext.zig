@@ -2,8 +2,10 @@
 //! The names are only valid when the pointer associated is not null.
 
 pub const WaylandContext = @This();
-pub const OutputsArray = ArrayListUnmanaged(Output);
-pub const DefaultOutputArraySize: usize = 2;
+
+/// 8 outputs should be enough for anyone.
+pub const MAX_OUTPUT_COUNT = 8;
+pub const OutputsArray = BoundedArray(Output, MAX_OUTPUT_COUNT);
 
 /// The Wayland connection itself.
 display: *wl.Display,
@@ -57,6 +59,9 @@ pointer: ?*wl.Pointer = null,
 /// TODO: Make this not a pointer so on output remove it is still the correct output.
 last_motion_surface: ?*Output = null,
 
+/// The wayland protocol says it should, but let's check anyway.
+has_argb8888: bool = false,
+
 /// Whether or not the program should still be running.
 running: bool = true,
 
@@ -72,7 +77,7 @@ pub fn init(wayland_context: *WaylandContext, allocator: Allocator) InitError!vo
         .registry = registry,
         .allocator = allocator,
 
-        .outputs = try OutputsArray.initCapacity(allocator, DefaultOutputArraySize),
+        .outputs = .{},
     };
 
     // set registry to set values in wayland_context
@@ -88,13 +93,12 @@ pub fn deinit(self: *WaylandContext) void {
     if (self.pointer) |pointer| pointer.release();
     if (self.seat) |seat| seat.release();
 
-    for (self.outputs.items) |*output| output.deinit();
+    for (self.outputs.slice()) |*output| output.deinit();
+    // no deinit outputs-array, no need.
 
     if (self.shm) |shm| shm.destroy();
     if (self.layer_shell) |layer_shell| layer_shell.destroy();
     if (self.compositor) |compositor| compositor.destroy();
-
-    self.outputs.deinit(self.allocator);
 
     self.* = undefined;
 }
@@ -104,10 +108,21 @@ pub fn deinit(self: *WaylandContext) void {
 ///
 /// This panics if the checker returns true on two or more outputs, so the identifier
 ///     should be output unique
-pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const Output, T) bool) ?u32 {
+pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const Output, T) bool) ?*Output {
+    const index = self.findOutputIndex(T, target, checker) orelse return null;
+
+    assert(index < MAX_OUTPUT_COUNT);
+    assert(index < self.outputs.len);
+
+    return &self.outputs.slice()[index];
+}
+
+pub fn findOutputIndex(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const Output, T) bool) ?u32 {
     var output_idx: ?u32 = null;
 
-    for (self.outputs.items, 0..) |*output, index| {
+    for (self.outputs.constSlice(), 0..) |*output, index| {
+        assert(index < MAX_OUTPUT_COUNT);
+
         if (checker(output, target)) {
             if (output_idx != null) @panic("Two Outputs with the same " ++ @typeName(T) ++ " found!");
             output_idx = @intCast(index);
@@ -125,7 +140,6 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
 
     const listen_for = .{
         .{ wl.Compositor, "compositor" },
-        .{ wl.Shm, "shm" },
         .{ zwlr.LayerShellV1, "layer_shell" },
         .{ wp.CursorShapeManagerV1, "cursor_shape_manager" },
     };
@@ -138,13 +152,23 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                 log_local.debug("Output Added with id #{}", .{global.name});
 
                 const output = registry.bind(global.name, wl.Output, wl.Output.generated_version) catch return;
-                output.setListener(*WaylandContext, OutputContext.outputListener, context);
 
-                context.outputs.append(context.allocator, Output.init(.{
+                if (std.debug.runtime_safety) {
+                    for (context.outputs.constSlice()) |*existing_output| {
+                        assert(existing_output.output_context.output != output);
+                    }
+                }
+
+                const output_info = Output.init(.{
+                    .id = global.name,
                     .output = output,
-                    .output_name = global.name,
                     .wayland_context = context,
-                })) catch @panic("Too many outputs!");
+                }) catch |err| {
+                    log.warn("Failed to initialize output with error: {s}", .{@errorName(err)});
+                    return;
+                };
+
+                context.outputs.append(output_info) catch @panic("Too many outputs!");
 
                 return;
             }
@@ -161,13 +185,25 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                 return;
             }
 
+            if (mem.orderZ(u8, global.interface, wl.Shm.getInterface().name) == .eq) {
+                assert(context.shm == null);
+
+                const shm = registry.bind(global.name, wl.Shm, wl.Shm.generated_version) catch @panic("Failed to bind Shm");
+                context.shm = shm;
+                context.shm_name = global.name;
+
+                shm.setListener(*bool, shmListener, &context.has_argb8888);
+
+                return;
+            }
+
             inline for (listen_for) |variable| {
                 const resource, const field = variable;
 
                 if (mem.orderZ(u8, global.interface, resource.getInterface().name) == .eq) {
                     log_local.debug("global added: '{s}'", .{global.interface});
                     assert(@field(context, field) == null);
-                    @field(context, field) = registry.bind(global.name, resource, resource.generated_version) catch @panic("Failed to bind resource");
+                    @field(context, field) = registry.bind(global.name, resource, resource.generated_version) catch @panic("Failed to bind resource '" ++ field ++ "'");
                     @field(context, field ++ "_name") = global.name;
 
                     return;
@@ -177,14 +213,16 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
             log_local.debug("unknown global ignored: '{s}'", .{global.interface});
         },
         .global_remove => |global| {
-            for (context.outputs.items, 0..) |*root_container, idx| {
-                const output_name = root_container.output_context.output_name;
-                if (output_name == global.name) {
-                    log_local.debug("Output '{s}' was removed", .{output_name});
-                    root_container.deinit();
+            for (context.outputs.slice(), 0..) |*output, idx| {
+                assert(idx < MAX_OUTPUT_COUNT); // loop counter
 
+                const output_id = output.output_context.id;
+                if (output_id == global.name) {
+                    log_local.debug("Output '{s}' was removed", .{output.output_context.name_str});
                     const ctx = context.outputs.swapRemove(idx);
-                    assert(ctx.output_context.output_name == output_name);
+                    assert(ctx.output_context.id == output_id);
+
+                    output.deinit();
 
                     return;
                 }
@@ -236,8 +274,8 @@ const zwlr = wayland.client.zwlr;
 const std = @import("std");
 const mem = std.mem;
 
-const ArrayListUnmanaged = std.ArrayListUnmanaged;
 const Allocator = std.mem.Allocator;
+const BoundedArray = std.BoundedArray;
 
 const assert = std.debug.assert;
 const log = std.log.scoped(.WaylandContext);

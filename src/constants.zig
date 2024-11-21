@@ -31,7 +31,7 @@ const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const zwlr = wayland.client.zwlr;
 
-const freetype = @cImport(@cInclude("freetype/freetype.h"));
+const freetype = @import("freetype_utils.zig").freetype;
 
 const std = @import("std");
 

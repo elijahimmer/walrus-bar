@@ -594,7 +594,7 @@ pub fn drawChar(freetype_context: *FreeTypeContext, args: DrawCharArgs) void {
         .y = glyph_area.y + glyph.*.bitmap_height,
     };
 
-    args.draw_context.drawBitmap(.{
+    drawBitmap(args.draw_context, .{
         .text_color = args.text_color,
         .no_alpha = args.no_alpha,
         .max_area = args.within orelse glyph_area,
@@ -681,6 +681,8 @@ const colors = @import("colors.zig");
 const Color = colors.Color;
 
 const Path = @import("Config.zig").Path;
+
+const drawBitmap = @import("draw_bitmap.zig").drawBitmap;
 
 const freetype_utils = @import("freetype_utils.zig");
 const freetype = freetype_utils.freetype;
