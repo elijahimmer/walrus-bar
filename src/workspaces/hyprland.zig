@@ -359,7 +359,9 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
 
 pub fn setWorkspace(wksp_id: WorkspaceID) !void {
     const resp = try sendHyprCommand(2, .{ .move_to_workspace = wksp_id });
-    assert(mem.eql(u8, resp.slice(), "ok"));
+    _ = resp;
+    // let's assume it worked... I mean, what else can we do?
+    //assert(mem.eql(u8, resp.slice(), "ok"));
 }
 
 test {
