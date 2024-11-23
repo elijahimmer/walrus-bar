@@ -114,6 +114,8 @@ padding: Padding,
 
 /// The padding between the battery and the progress_bar.
 inner_padding: Size,
+
+/// True if the inner padding was config specified.
 inner_padding_was_specified: bool,
 
 /// The inner widget for dynamic dispatch and generic fields.
@@ -181,7 +183,7 @@ pub fn init(area: Rect, config: BatteryConfig) !Battery {
         log.warn("Failed to open Battery Charge File with: {s}", .{@errorName(err)});
         return error.ChargeFileError;
     };
-    errdefer full_file.close();
+    errdefer charge_file.close();
 
     {
         const charge_metadata = charge_file.metadata() catch |err| {
@@ -203,7 +205,7 @@ pub fn init(area: Rect, config: BatteryConfig) !Battery {
         log.warn("Failed to open Battery Status File with: {s}", .{@errorName(err)});
         return error.StatusFileError;
     };
-    errdefer full_file.close();
+    errdefer status_file.close();
 
     {
         const status_metadata = status_file.metadata() catch |err| {
@@ -279,7 +281,12 @@ pub fn init(area: Rect, config: BatteryConfig) !Battery {
     return self;
 }
 
-/// Reads a file that only contains an int.
+pub fn motion(battery: *Battery, point: Point) void {
+    _ = battery;
+    _ = point;
+}
+
+/// Reads a file that only contains an unsigned int.
 fn readFileInt(comptime T: type, file: std.fs.File) !T {
     assert(@typeInfo(T) == .Int);
     assert(@typeInfo(T).Int.signedness == .unsigned);

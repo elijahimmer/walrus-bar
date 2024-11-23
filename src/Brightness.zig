@@ -182,12 +182,7 @@ pub fn init(area: Rect, config: BrightnessConfig) !Brightness {
 
             // set to an empty area because if undefined it could do
             // something weird in setArea
-            .area = .{
-                .x = 0,
-                .y = 0,
-                .width = 0,
-                .height = 0,
-            },
+            .area = Rect.ZERO,
         },
     };
 

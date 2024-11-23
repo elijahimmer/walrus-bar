@@ -27,8 +27,8 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
     const log_local = std.log.scoped(.Pointer);
 
     const checker = struct {
-        pub fn checker(draw_context: *const DrawContext, target: *wl.Surface) bool {
-            return draw_context.surface == target;
+        pub fn checker(output: *const Output, target: *wl.Surface) bool {
+            return output.surface == target;
         }
     }.checker;
 
@@ -37,13 +37,12 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
     switch (event) {
         .enter => |enter| {
             if (enter.surface) |surface| {
-                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
+                const output = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = &wayland_context.outputs.items[output_idx];
-                wayland_context.last_motion_surface = draw_context;
+                wayland_context.last_motion_surface = output;
 
-                assert(draw_context.root_container != null);
-                const root_container = &draw_context.root_container.?;
+                assert(output.root_container != null);
+                const root_container = &output.root_container.?;
 
                 const point = Point{
                     .x = @intCast(@max(enter.surface_x.toInt(), 0)),
@@ -55,42 +54,40 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                         cursor_shape_manager,
                         pointer,
                     ) catch |err| {
-                        log.warn("Failed to get pointer device for surface '{s}' with: {s}", .{ draw_context.output_context.name, @errorName(err) });
+                        log.warn("Failed to get pointer device for surface '{s}' with: {s}", .{ output.output_context.name_str.constSlice(), @errorName(err) });
                         break :set_pointer;
                     };
                     defer pointer_device.destroy();
                     pointer_device.setShape(enter.serial, .default);
                 }
 
-                if (root_container.area.containsPoint(point)) root_container.motion(point);
+                if (root_container.widget.area.containsPoint(point)) root_container.widget.motion(point);
             } else {
                 log_local.warn("Cursor entered but not on a surface?", .{});
             }
         },
         .motion => |motion| {
-            if (wayland_context.last_motion_surface) |draw_context| {
-                assert(draw_context.root_container != null);
-                const root_container = &draw_context.root_container.?;
+            if (wayland_context.last_motion_surface) |output| {
+                assert(output.root_container != null);
+                const root_container = &output.root_container.?;
 
                 const point = Point{
                     .x = @intCast(@max(motion.surface_x.toInt(), 0)),
                     .y = @intCast(@max(motion.surface_y.toInt(), 0)),
                 };
 
-                if (root_container.area.containsPoint(point)) root_container.motion(point);
+                if (root_container.widget.area.containsPoint(point)) root_container.widget.motion(point);
             } else {
                 log_local.warn("Cursor motion but not on a surface?", .{});
             }
         },
         .leave => |leave| {
             if (leave.surface) |surface| {
-                const output_idx = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
+                const output = wayland_context.findOutput(*wl.Surface, surface, &checker) orelse @panic("Pointer event on surface that doesn't exist!");
 
-                const draw_context = &wayland_context.outputs.items[output_idx];
+                assert(output.root_container != null);
 
-                assert(draw_context.root_container != null);
-
-                draw_context.root_container.?.leave();
+                output.root_container.?.widget.leave();
             } else {
                 log_local.warn("Cursor left but not on a surface?", .{});
             }
@@ -106,7 +103,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 },
                 .right_click => {
                     if (builtin.mode == .Debug) {
-                        for (wayland_context.outputs.items) |*output| {
+                        for (wayland_context.outputs.slice()) |*output| {
                             output.full_redraw = true;
                         }
                     }
@@ -114,7 +111,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
                 else => {
                     if (wayland_context.last_motion_surface) |draw_context| {
                         assert(draw_context.root_container != null);
-                        draw_context.root_container.?.click(@enumFromInt(button.button));
+                        draw_context.root_container.?.widget.click(@enumFromInt(button.button));
                     } else {
                         log_local.warn("Cursor motion but not on a surface?", .{});
                     }
@@ -127,7 +124,7 @@ pub fn pointerListener(pointer: *wl.Pointer, event: wl.Pointer.Event, wayland_co
 
             if (wayland_context.last_motion_surface) |draw_context| {
                 assert(draw_context.root_container != null);
-                draw_context.root_container.?.scroll(axis.axis, axis.value.toInt());
+                draw_context.root_container.?.widget.scroll(axis.axis, axis.value.toInt());
             } else {
                 log_local.warn("Scroll event but not on a surface?", .{});
             }
@@ -147,7 +144,7 @@ pub const MouseButton = enum(u16) {
 };
 
 const WaylandContext = @import("WaylandContext.zig");
-const DrawContext = @import("DrawContext.zig");
+const Output = @import("Output.zig");
 
 const drawing = @import("drawing.zig");
 const Point = drawing.Point;
@@ -162,5 +159,6 @@ const std = @import("std");
 
 const assert = std.debug.assert;
 const panic = std.debug.panic;
-const log = std.log.scoped(.@"walrus-bar");
 const maxInt = std.math.maxInt;
+
+const log = std.log.scoped(.Seat);

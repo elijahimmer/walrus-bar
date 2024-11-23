@@ -5,8 +5,6 @@ pub const Config = @This();
 pub const default_text_color = colors.rose;
 pub const default_background_color = colors.surface;
 pub const default_window_height = 28;
-pub const minimum_window_height = 15;
-pub const minimum_window_width = 500;
 
 pub const transient_settings = .{
     "background_color",
@@ -25,6 +23,8 @@ pub const General = struct {
     pub const text_color_comment = "The default text colors";
     pub const background_color_comment = "The default background color";
 
+    pub const time_to_popup_comment = "The amount of time passed in milliseconds before a popup would popup.";
+
     width: ?u16 = null,
     height: u16 = default_window_height,
 
@@ -32,6 +32,8 @@ pub const General = struct {
 
     text_color: Color = default_text_color,
     background_color: Color = default_background_color,
+
+    time_to_popup: u64 = 100,
 };
 
 /// global config. Use only after you have initialized it with init
@@ -287,6 +289,7 @@ pub fn resolveTypeName(comptime T: type) []const u8 {
         []const u8 => "String",
         u21 => "Character",
         u8 => "u8",
+        u64 => "u64",
         Size => "Size",
         Color => "Color",
         else => unreachable,
@@ -369,6 +372,7 @@ pub const parsers = .{
     .String = parseString,
     .Size = generateIntParser(Size, 0),
     .u8 = generateIntParser(u8, 0),
+    .u64 = generateIntParser(u64, 0),
     .Color = colors.parseColor,
 };
 

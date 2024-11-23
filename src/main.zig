@@ -1,8 +1,12 @@
 pub fn main() !void {
+    defer if (std.debug.runtime_safety) checkForFileLeaks();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{
-        .thread_safe = false, // we should only ever use it on the main (wayland) thread.
+        // we should only ever use it on the main (wayland) thread.
+        .thread_safe = false,
     }){};
     defer _ = gpa.deinit();
+
     var logging_allocator = std.heap.ScopedLoggingAllocator(.Allocations, .debug, .warn).init(gpa.allocator());
     const allocator = logging_allocator.allocator();
 
@@ -16,7 +20,7 @@ pub fn main() !void {
     // initialize the app's context.
     var wayland_context: WaylandContext = undefined;
 
-    try WaylandContext.init(&wayland_context, allocator);
+    try WaylandContext.init(&wayland_context);
     defer wayland_context.deinit();
 
     while (wayland_context.running) {
@@ -28,13 +32,76 @@ pub fn main() !void {
                 log.warn("Roundtrip Failed with Invalid Request", .{});
                 break;
             },
+            .CONNRESET => {
+                log.warn("Connection reset. exiting...", .{});
+                break;
+            },
             else => |err| {
-                log.warn("Roundtrip Failed: {s}", .{@tagName(err)});
+                log.warn("Roundtrip Failed with {s}", .{@tagName(err)});
+                break;
             },
         }
     }
 
-    log.info("Shutting Down.", .{});
+    log.info("Shutting Down...", .{});
+}
+
+pub fn checkForFileLeaks() void {
+    log.info("Starting file leak test...", .{});
+
+    const fd_dir_path = "/proc/self/fd/";
+
+    const fd_dir = std.fs.openDirAbsoluteZ(fd_dir_path, .{ .iterate = true }) catch |err| {
+        log.err("Failed to open directory holding open files with {s}", .{@errorName(err)});
+        return;
+    };
+
+    var fd_dir_iter = fd_dir.iterateAssumeFirstIteration();
+
+    var found_leaks = false;
+    defer if (!found_leaks) log.info("No leaks found!", .{});
+
+    const reserved_file_count = 4;
+    for (0..reserved_file_count) |_| {
+        const reserved_file = fd_dir_iter.next() catch |err| {
+            log.warn("Failed to iterate open files directory with {s}", .{@errorName(err)});
+            continue;
+        };
+        assert(reserved_file != null);
+    }
+
+    iter_loop: while (fd_dir_iter.next()) |entry_maybe_null| {
+        if (entry_maybe_null == null) break;
+        const entry = &entry_maybe_null.?;
+
+        log.debug("file '{s}' open", .{entry.name});
+
+        switch (entry.kind) {
+            .sym_link => {
+                found_leaks = true;
+
+                var path_buff: [posix.PATH_MAX]u8 = undefined;
+                const real_path = fd_dir.realpath(entry.name, &path_buff) catch |err| {
+                    switch (err) {
+                        error.FileNotFound => unreachable,
+                        else => log.warn("Failed to get real path from sym link file '{s}' with {s}", .{ entry.name, @errorName(err) }),
+                    }
+                    continue :iter_loop;
+                };
+
+                log.warn("Failed to close file '{s}'", .{real_path});
+            },
+            else => {
+                // I'm pretty sure only sym links should be here, but we might as well...
+                found_leaks = true;
+
+                log.warn("Failed to close file '{s}' which is a {s}", .{ entry.name, @tagName(entry.kind) });
+            },
+        }
+    } else |err| {
+        log.err("Failed to iterate open files directory with {s}", .{@errorName(err)});
+        return;
+    }
 }
 
 test {
@@ -73,6 +140,7 @@ const FreeTypeContext = @import("FreeTypeContext.zig");
 const logging = @import("logging.zig");
 
 const std = @import("std");
+const posix = std.posix;
 
 const assert = std.debug.assert;
 const maxInt = std.math.maxInt;

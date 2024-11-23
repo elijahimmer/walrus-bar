@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
     const options = b.addOptions();
     const logging_options = b.addOptions();
 
-    const allocation_logging_level = b.option(LogLevel, "allocation-logging-level", "Which logging level to use for allocations (default: warn)") orelse .warn;
+    const allocation_logging_level = b.option(LogLevel, "allocation-logging", "Which logging level to use for allocations (default: warn)") orelse .warn;
     logging_options.addOption(LogLevel, "allocations", allocation_logging_level);
     { // freetype
         const FreeTypeAllocatorOptions = enum { c, zig };
@@ -45,7 +45,7 @@ pub fn build(b: *std.Build) void {
         logging_options.addOption(LogLevel, "FreeTypeContext", freetype_logging);
     }
 
-    const registry_logging = b.option(LogLevel, "registry_logging", "Enable Wayland Registry Logging (default: warn)") orelse .warn;
+    const registry_logging = b.option(LogLevel, "registry-logging", "Enable Wayland Registry Logging (default: warn)") orelse .warn;
     logging_options.addOption(LogLevel, "Registry", registry_logging);
 
     const track_damage = b.option(bool, "track-damage", "Enable damage outlines. (default: false)") orelse false;
@@ -130,7 +130,7 @@ pub fn build(b: *std.Build) void {
     scanner.generate("wp_cursor_shape_manager_v1", 1);
 
     scanner.addSystemProtocol("stable/xdg-shell/xdg-shell.xml"); // needed by wlr-layer-shell
-    //scanner.generate("xdg_wm_base", 2);
+    scanner.generate("xdg_wm_base", 2);
 
     scanner.addSystemProtocol("wlr/unstable/wlr-layer-shell-unstable-v1.xml");
     scanner.generate("zwlr_layer_shell_v1", 4);

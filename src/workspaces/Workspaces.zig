@@ -129,22 +129,29 @@ pub inline fn fontScalingFactor(height: Size) Size {
     return height * 3 / 4;
 }
 
-/// Updates the state of the widget with `updateState`, then proceeds
-/// to draw any changes in state (or redraw fully if needed).
-pub fn draw(self: *Workspaces, draw_context: *DrawContext) error{}!void {
-    self.updateState();
-
-    // ensure the workspaces are sorted.
-    assert(std.sort.isSorted(Workspace, self.workspaces.constSlice(), {}, struct {
+pub fn correctnessCheck(workspaces: *const Workspaces) void {
+    // make sure the workspaces are sorted.
+    assert(std.sort.isSorted(Workspace, workspaces.workspaces.constSlice(), {}, struct {
         pub fn lessThan(_: void, lhs: Workspace, rhs: Workspace) bool {
             return lhs.id < rhs.id;
         }
     }.lessThan));
 
     // ensure each workspace has a unique id.
-    for (self.workspaces.constSlice(), 0..) |wksp, idx| {
-        for (self.workspaces.constSlice()[idx + 1 ..]) |wksp2| assert(wksp.id != wksp2.id);
+    for (workspaces.workspaces.constSlice(), 0..) |wksp, idx| {
+        for (workspaces.workspaces.constSlice()[idx + 1 ..]) |wksp2| assert(wksp.id != wksp2.id);
     }
+}
+
+/// Updates the state of the widget with `updateState`, then proceeds
+/// to draw any changes in state (or redraw fully if needed).
+pub fn draw(self: *Workspaces, draw_context: *DrawContext) !void {
+    // check initial state.
+    if (std.debug.runtime_safety) self.correctnessCheck();
+    self.updateState();
+
+    if (std.debug.runtime_safety) self.correctnessCheck();
+    defer if (std.debug.runtime_safety) self.correctnessCheck();
 
     defer self.widget.full_redraw = false;
 
@@ -256,7 +263,11 @@ fn updateState(self: *Workspaces) void {
         };
     }
 
-    workspace_state.rwlock.lockShared();
+    if (!workspace_state.rwlock.tryLockShared()) {
+        // TODO: Remove this once we decouple update from draw.
+        // if it fails to lock, just don't update this draw.
+        return;
+    }
     defer workspace_state.rwlock.unlockShared();
 
     // if there is no widget area after padding, just don't. There is no point.
@@ -308,9 +319,10 @@ fn updateState(self: *Workspaces) void {
 
         defer wksp.id = wk_id;
         const wk_symbol = self.getWorkspaceSymbol(wk_id);
+        defer assert(wksp.char == wk_symbol);
 
         const newly_active = wk_id == workspace_state.active_workspace and wk_id != self.active_workspace;
-        const prev_active = wk_id == self.active_workspace and wk_id != workspace_state.active_workspace;
+        const prev_active = wk_id != workspace_state.active_workspace and wk_id == self.active_workspace;
 
         if (newly_active) {
             assert(!newly_active_found);
@@ -327,7 +339,6 @@ fn updateState(self: *Workspaces) void {
             wksp.char = wk_symbol;
             wksp.should_redraw = true;
         }
-        assert(wksp.char == wk_symbol);
     }
 }
 
@@ -353,8 +364,11 @@ fn pointToWorkspaceIndex(self: *const Workspaces, point: Point) ?WorkspaceIndex 
 }
 
 // Changes workspaces to whichever workspace was clicked on.
-pub fn click(self: *const Workspaces, point: Point, button: MouseButton) void {
+pub fn click(self: *const Workspaces, button: MouseButton) void {
     if (button != .left_click) return;
+    assert(self.widget.last_motion != null);
+
+    const point = self.widget.last_motion.?;
 
     if (self.pointToWorkspaceIndex(point)) |wksp_idx| {
         const wksp = self.workspaces.get(wksp_idx);
@@ -419,16 +433,6 @@ pub fn init(area: Rect, config: WorkspacesConfig) !Workspaces {
             .area = area,
         },
     };
-}
-
-// Deinitializes the widget, and frees the Workspaces.
-// This should only be called if this Widget was created
-// with `new`, (or allocated manually).
-pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-
-    self.deinit();
-    allocator.destroy(self);
 }
 
 /// Deinitializes the widget. This should only be called if

@@ -122,7 +122,7 @@ pub fn draw(self: *TextBox, draw_context: *DrawContext) void {
                 .transform = Transform.identity,
             });
 
-            draw_context.drawBitmap(.{
+            drawBitmap(draw_context, .{
                 .origin = .{ .x = @intCast(pen_x >> 6), .y = @intCast(pen_y >> 6) },
                 .text_color = self.text_color,
                 .max_area = self.area,
@@ -339,6 +339,8 @@ const Transform = drawing.Transform;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
 const Size = drawing.Size;
+
+const drawBitmap = @import("draw_bitmap.zig").drawBitmap;
 
 const DrawContext = @import("DrawContext.zig");
 const FreeTypeContext = @import("FreeTypeContext.zig");

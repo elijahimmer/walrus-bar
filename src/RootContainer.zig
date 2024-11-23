@@ -2,8 +2,7 @@
 
 pub const RootContainer = @This();
 
-area: Rect,
-last_motion: ?Point = null,
+widget: Widget,
 
 // TODO: Remove these widgets and make a separate container struct for them.
 workspaces: if (options.workspaces_enabled) ?Workspaces else void = if (options.workspaces_enabled) null else {},
@@ -18,18 +17,52 @@ pub fn deinit(self: *RootContainer) void {
     if (options.brightness_enabled) if (self.brightness) |*w| w.deinit();
 }
 
-pub fn setArea(self: RootContainer, area: Rect) void {
+pub fn setArea(self: *RootContainer, area: Rect) void {
+    self.widget.area = area;
+
+    if (options.clock_enabled and self.clock != null) {
+        var center_area = self.clock.?.widget.area;
+        center_area.width = self.clock.?.getWidth();
+
+        self.clock.?.setArea(area.center(center_area.dims()));
+    }
+
+    if (options.workspaces_enabled and self.workspaces != null) {
+        var left_area = self.workspaces.?.widget.area;
+        left_area.width = self.workspaces.?.getWidth();
+
+        self.workspaces.?.setArea(left_area);
+    }
+
+    if (options.battery_enabled and self.battery != null) {
+        var right_area = self.battery.?.widget.area;
+        right_area.width = self.battery.?.getWidth();
+        right_area.x = area.width - right_area.width;
+
+        self.battery.?.widget.setArea(right_area);
+    }
+
+    if (options.brightness_enabled and self.brightness != null) {
+        const x_pos = if (options.battery_enabled and self.battery != null)
+            self.battery.?.widget.area.x
+        else
+            area.width;
+
+        var right_area = self.brightness.?.widget.area;
+        right_area.width = self.brightness.?.getWidth();
+        right_area.x = x_pos - right_area.width;
+
+        self.brightness.?.widget.setArea(right_area);
+    }
+}
+
+pub fn getWidth(self: *RootContainer) Size {
     _ = self;
-    _ = area;
     @panic("unimplemented");
 }
 
-pub fn getWidth(self: RootContainer) Size {
-    _ = self;
-    @panic("unimplemented");
-}
-
-pub fn draw(self: *RootContainer, draw_context: *DrawContext) !void {
+pub fn draw(self: *RootContainer, draw_context: *DrawContext) error{}!void {
+    defer draw_context.current_area = Rect.ZERO;
     inline for (.{ "workspaces", "clock", "battery", "brightness" }) |name| {
         if (@TypeOf(@field(self, name)) == void) continue;
 
@@ -43,24 +76,23 @@ pub fn draw(self: *RootContainer, draw_context: *DrawContext) !void {
 }
 
 pub fn scroll(self: *RootContainer, axis: Axis, discrete: i32) void {
-    assert(self.last_motion != null);
-    self.area.assertContainsPoint(self.last_motion.?);
+    assert(self.widget.last_motion != null);
+    self.widget.area.assertContainsPoint(self.widget.last_motion.?);
 
     inline for (.{ "workspaces", "clock", "battery", "brightness" }) |widget_name| {
         if (@TypeOf(@field(self, widget_name)) == void) continue;
         if (@field(self, widget_name)) |*widget| {
             const area = widget.widget.area;
-            if (area.containsPoint(self.last_motion.?)) widget.widget.scroll(axis, discrete);
+            if (area.containsPoint(self.widget.last_motion.?)) widget.widget.scroll(axis, discrete);
         }
     }
 }
 
 pub fn motion(self: *RootContainer, point: Point) void {
-    self.area.assertContainsPoint(point);
-    if (self.last_motion) |lm| self.area.assertContainsPoint(lm);
+    self.widget.area.assertContainsPoint(point);
+    if (self.widget.last_motion) |lm| self.widget.area.assertContainsPoint(lm);
 
-    const last_motion = self.last_motion;
-    defer self.last_motion = point;
+    const last_motion = self.widget.last_motion;
 
     inline for (.{ "workspaces", "clock", "battery", "brightness" }) |widget_name| {
         if (@TypeOf(@field(self, widget_name)) == void) continue;
@@ -77,15 +109,14 @@ pub fn motion(self: *RootContainer, point: Point) void {
 
 /// asserts the it has a valid a last motion.
 pub fn leave(self: *RootContainer) void {
-    assert(self.last_motion != null);
-    self.area.assertContainsPoint(self.last_motion.?);
-    defer self.last_motion = null;
+    if (self.widget.last_motion == null) return;
+    self.widget.area.assertContainsPoint(self.widget.last_motion.?);
 
     var left = false;
     inline for (.{ "workspaces", "clock", "battery", "brightness" }) |widget_name| {
         if (@TypeOf(@field(self, widget_name)) == void) continue;
         if (@field(self, widget_name)) |*widget| {
-            if (widget.widget.area.containsPoint(self.last_motion.?)) {
+            if (widget.widget.area.containsPoint(self.widget.last_motion.?)) {
                 // make sure no widgets overlap
                 assert(!left);
                 left = true;
@@ -97,17 +128,17 @@ pub fn leave(self: *RootContainer) void {
 
 /// asserts the it has a valid a last motion.
 pub fn click(self: *RootContainer, button: MouseButton) void {
-    assert(self.last_motion != null);
-    self.area.assertContainsPoint(self.last_motion.?);
+    assert(self.widget.last_motion != null);
+    self.widget.area.assertContainsPoint(self.widget.last_motion.?);
 
     var clicked = false;
     inline for (.{ "workspaces", "clock", "battery", "brightness" }) |widget_name| {
         if (@TypeOf(@field(self, widget_name)) == void) continue;
         if (@field(self, widget_name)) |*widget| {
-            if (widget.widget.area.containsPoint(self.last_motion.?)) {
-                assert(!clicked);
+            if (widget.widget.area.containsPoint(self.widget.last_motion.?)) {
+                assert(!clicked); // make sure no widgets overlap.
                 clicked = true;
-                widget.widget.click(self.last_motion.?, button);
+                widget.widget.click(button);
             }
         }
     }
@@ -115,11 +146,14 @@ pub fn click(self: *RootContainer, button: MouseButton) void {
 
 pub fn init(area: Rect) RootContainer {
     var root_container = RootContainer{
-        .area = area,
+        .widget = .{
+            .vtable = Widget.generateVTable(RootContainer),
+            .area = Rect.ZERO,
+        },
     };
 
     if (options.clock_enabled) {
-        var clock = Clock.init(
+        root_container.clock = Clock.init(
             .{
                 .x = 0,
                 .y = 0,
@@ -128,17 +162,10 @@ pub fn init(area: Rect) RootContainer {
             },
             config.clock,
         );
-
-        var center_area = clock.widget.area;
-        center_area.width = clock.getWidth();
-
-        clock.setArea(area.center(center_area.dims()));
-
-        root_container.clock = clock;
     }
 
     if (options.workspaces_enabled) workspaces: {
-        var workspaces = Workspaces.init(
+        root_container.workspaces = Workspaces.init(
             .{
                 .x = 0,
                 .y = 0,
@@ -150,17 +177,10 @@ pub fn init(area: Rect) RootContainer {
             log.warn("Failed to initialize Workspace with: {s}", .{@errorName(err)});
             break :workspaces;
         };
-
-        var left_area = workspaces.widget.area;
-        left_area.width = workspaces.getWidth();
-
-        workspaces.setArea(left_area);
-
-        root_container.workspaces = workspaces;
     }
 
     if (options.battery_enabled) battery: {
-        var battery = Battery.init(.{
+        root_container.battery = Battery.init(.{
             .x = 0,
             .y = 0,
             .width = 1000,
@@ -169,21 +189,10 @@ pub fn init(area: Rect) RootContainer {
             log.warn("Failed to initalized Battery with: {s}", .{@errorName(err)});
             break :battery;
         };
-
-        var right_area = battery.widget.area;
-        right_area.width = battery.getWidth();
-        right_area.x = area.width - right_area.width;
-
-        battery.widget.setArea(right_area);
-        log.debug("battery: area: {}, {}", .{ battery.widget.area, battery.progress_area });
-
-        battery.widget.area.assertContains(battery.progress_area);
-
-        root_container.battery = battery;
     }
 
     if (options.brightness_enabled) brightness: {
-        var brightness = Brightness.init(.{
+        root_container.brightness = Brightness.init(.{
             .x = 0,
             .y = 0,
             .width = 1000,
@@ -192,23 +201,9 @@ pub fn init(area: Rect) RootContainer {
             log.warn("Failed to initalized Brightness with: {s}", .{@errorName(err)});
             break :brightness;
         };
-
-        const x_pos = if (options.battery_enabled and root_container.battery != null)
-            root_container.battery.?.widget.area.x
-        else
-            root_container.area.width;
-
-        var right_area = brightness.widget.area;
-        right_area.width = brightness.getWidth();
-        right_area.x = x_pos - right_area.width;
-
-        brightness.widget.setArea(right_area);
-        log.debug("brightness: area: {}, {}", .{ brightness.widget.area, brightness.progress_area });
-
-        brightness.widget.area.assertContains(brightness.progress_area);
-
-        root_container.brightness = brightness;
     }
+
+    root_container.setArea(area);
 
     return root_container;
 }
@@ -225,12 +220,16 @@ const config = &Config.global;
 const colors = @import("colors.zig");
 
 const DrawContext = @import("DrawContext.zig");
+const OutputContext = @import("OutputContext.zig");
+const WaylandContext = @import("WaylandContext.zig");
+
 const Workspaces = @import("workspaces/Workspaces.zig");
 const Clock = @import("Clock.zig");
 const Battery = @import("Battery.zig");
 const Brightness = @import("Brightness.zig");
 
 const drawing = @import("drawing.zig");
+const Widget = drawing.Widget;
 const Point = drawing.Point;
 const Rect = drawing.Rect;
 const Size = drawing.Size;
@@ -238,6 +237,10 @@ const Size = drawing.Size;
 const seat_utils = @import("seat_utils.zig");
 const MouseButton = seat_utils.MouseButton;
 const Axis = seat_utils.Axis;
+
+const wayland = @import("wayland");
+const wl = wayland.client.wl;
+const zwlr = wayland.client.zwlr;
 
 const std = @import("std");
 
