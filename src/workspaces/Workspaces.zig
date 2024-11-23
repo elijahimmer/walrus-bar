@@ -131,8 +131,8 @@ pub inline fn fontScalingFactor(height: Size) Size {
 
 /// Updates the state of the widget with `updateState`, then proceeds
 /// to draw any changes in state (or redraw fully if needed).
-pub fn draw(self: *Workspaces, draw_context: *DrawContext) anyerror!void {
-    try self.updateState();
+pub fn draw(self: *Workspaces, draw_context: *DrawContext) error{}!void {
+    self.updateState();
 
     // ensure the workspaces are sorted.
     assert(std.sort.isSorted(Workspace, self.workspaces.constSlice(), {}, struct {
@@ -240,7 +240,22 @@ fn getWorkspaceSymbol(self: *const Workspaces, id: WorkspaceID) u21 {
 }
 
 /// Update the state to be in sync with the workspaces worker.
-fn updateState(self: *Workspaces) !void {
+fn updateState(self: *Workspaces) void {
+    const rc = workspace_state.rc.load(.monotonic);
+    // workspaces worker turned off
+    if (rc == 0) {
+        workspace_state.init() catch |err| {
+            switch (err) {
+                error.ServiceNotFound => {},
+                else => {
+                    log.warn("Failed to restart workspaces state with {s}", .{@errorName(err)});
+                },
+            }
+
+            return;
+        };
+    }
+
     workspace_state.rwlock.lockShared();
     defer workspace_state.rwlock.unlockShared();
 
@@ -358,7 +373,11 @@ pub fn init(area: Rect, config: WorkspacesConfig) !Workspaces {
 
     assert(unicode.utf8ValidateSlice(config.symbols));
 
-    try workspace_state.init();
+    workspace_state.init() catch |err| switch (err) {
+        // workspaces state in valid on service not found, it will just be empty.
+        error.ServiceNotFound => {},
+        else => return err,
+    };
 
     // convert given string of workspaces into a decoded unicode array
     var symbols = WorkspaceSymbolArray{};

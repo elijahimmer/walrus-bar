@@ -181,6 +181,9 @@ const loop_sleep_time = std.time.ns_per_ms * 50;
 pub fn work(state: *WorkspaceState) void {
     log.info("Hyprland Worker Started!", .{});
     defer log.info("Hyprland Worker Stopped!", .{});
+    // set RC to zero to have a way of (quickly) tracking whether
+    // or not the worker is still going
+    defer state.rc.store(0, .monotonic);
 
     initalizeState(state);
 

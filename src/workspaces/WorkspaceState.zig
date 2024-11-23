@@ -24,21 +24,33 @@ pub var global = WorkspaceState{
 
 /// only use this on the main thread.
 rc: std.atomic.Value(WorkspaceID),
-worker_thread: Thread,
+worker_thread: ?Thread,
 
 rwlock: Thread.RwLock = .{},
 
 workspaces: WorkspaceArray,
 active_workspace: WorkspaceID,
 
+// whether or not to log if we failed to find the hyprland instance.
+logged_service_not_found: bool = false,
+
+// When error.ServiceNotFound is returned,
+// the state will be valid, just empty with an invalid thread
 pub fn init(self: *WorkspaceState) !void {
-    const rc = self.rc.fetchAdd(1, .acq_rel);
+    _ = self.rc.fetchAdd(1, .acq_rel);
 
-    if (!Impl.available()) return error.@"Service Not Found";
+    if (!Impl.available()) {
+        if (!self.logged_service_not_found) log.warn(@tagName(options.workspaces_provider) ++ " Not Found", .{});
 
-    if (rc == 0) {
+        self.logged_service_not_found = true;
+        return error.ServiceNotFound;
+    }
+
+    self.logged_service_not_found = false;
+
+    if (self.worker_thread == null) {
         self.worker_thread = try Thread.spawn(.{}, Impl.work, .{self});
-        self.worker_thread.setName(workspaces_worker_name) catch |err| {
+        self.worker_thread.?.setName(workspaces_worker_name) catch |err| {
             // we don't really care about the name, just log the error
             log.warn("Failed to set Workspaces Worker Thread's name with: {s}", .{@errorName(err)});
         };
@@ -58,12 +70,18 @@ pub fn deinit(self: *WorkspaceState) void {
 
     // if the previous value was 1 or less (so it is not zero)
     if (rc_remaining == 0) {
-        log.debug("Joining Worker...", .{});
-        self.worker_thread.join();
-        log.debug("Worker Joined.", .{});
-    }
+        self.logged_service_not_found = false;
 
-    self.* = undefined;
+        if (self.worker_thread) |*thread| {
+            log.debug("Joining Worker...", .{});
+            thread.join();
+            log.debug("Worker Joined.", .{});
+        } else {
+            log.debug("Worker not started.", .{});
+        }
+
+        self.* = undefined;
+    }
 }
 
 pub const RC = u32;
