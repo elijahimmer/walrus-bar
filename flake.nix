@@ -23,7 +23,7 @@
 
         packages.default = pkgs.stdenvNoCC.mkDerivation (finalAttrs: {
           pname = "walrus-bar";
-          version = "0.1.6";
+          version = "0.1.7";
 
           outputs = ["out"];
 
