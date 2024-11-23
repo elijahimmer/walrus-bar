@@ -106,7 +106,7 @@ pub fn outputChanged(output: *Output, wayland_context: *WaylandContext) !void {
             .y = output.window_size.y,
         }) catch |err| {
             log.warn("Failed to create Shared memory pool on output resize. error={s}", .{@errorName(err)});
-            shm_pool.destroy();
+            shm_pool.pool.destroy();
             return err;
         };
     } else {
@@ -128,8 +128,12 @@ pub fn outputChanged(output: *Output, wayland_context: *WaylandContext) !void {
     output.full_redraw = true;
 
     //TODO: Implement root container resizing.
-    if (output.root_container) |*rc| rc.deinit();
-    output.root_container = RootContainer.init(output.window_size.extendTo(Point.ZERO));
+    if (output.root_container == null) {
+        output.root_container = RootContainer.init(output.window_size.extendTo(Point.ZERO));
+    }
+    assert(output.root_container != null);
+
+    output.root_container.?.setArea(output.window_size.extendTo(Point.ZERO));
 
     output.draw();
 

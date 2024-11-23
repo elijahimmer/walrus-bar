@@ -13,9 +13,6 @@ display: *wl.Display,
 /// The registry that holds and controls all the global variables.
 registry: *wl.Registry,
 
-/// The general allocator for everything to use.
-allocator: Allocator,
-
 /// Stores the info for all the outputs.
 outputs: OutputsArray,
 
@@ -65,9 +62,9 @@ has_argb8888: bool = false,
 /// Whether or not the program should still be running.
 running: bool = true,
 
-pub const InitError = Allocator.Error || error{ ConnectFailed, RoundtripFailed };
+pub const InitError = error{ ConnectFailed, RoundtripFailed, OutOfMemory };
 
-pub fn init(wayland_context: *WaylandContext, allocator: Allocator) InitError!void {
+pub fn init(wayland_context: *WaylandContext) InitError!void {
     // start wayland connection.
     const display = try wl.Display.connect(null);
     var registry = try display.getRegistry();
@@ -75,7 +72,6 @@ pub fn init(wayland_context: *WaylandContext, allocator: Allocator) InitError!vo
     wayland_context.* = WaylandContext{
         .display = display,
         .registry = registry,
-        .allocator = allocator,
 
         .outputs = .{},
     };
@@ -103,11 +99,11 @@ pub fn deinit(self: *WaylandContext) void {
     self.* = undefined;
 }
 
-/// Runs the checker on all outputs in the outputs field of a WaylandContext.
+/// Runs the checker on all outputs in the outputs_slice field, and returns a pointer to the output if it is found.
 /// This used to identify a output by a pointer to a object it contains.
 ///
-/// This panics if the checker returns true on two or more outputs, so the identifier
-///     should be output unique
+/// This panics if the checker returns true for two or more outputs, so the identifier
+///     must be output unique.
 pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const Output, T) bool) ?*Output {
     const index = self.findOutputIndex(T, target, checker) orelse return null;
 
@@ -117,6 +113,11 @@ pub fn findOutput(self: *WaylandContext, comptime T: type, target: T, checker: *
     return &self.outputs.slice()[index];
 }
 
+/// Runs the checker on all the outputs in the outputs_slice field, and returns the index of the matching output if one is found.
+/// This used to identify a output by a pointer to a object it contains.
+///
+/// This panics if the checker returns true for two or more outputs, so the identifier
+///     must be output unique.
 pub fn findOutputIndex(self: *WaylandContext, comptime T: type, target: T, checker: *const fn (*const Output, T) bool) ?u32 {
     var output_idx: ?u32 = null;
 
@@ -218,7 +219,7 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
 
                 const output_id = output.output_context.id;
                 if (output_id == global.name) {
-                    log_local.debug("Output '{s}' was removed", .{output.output_context.name_str});
+                    log_local.debug("Output '{s}' was removed", .{output.output_context.name_str.constSlice()});
                     const ctx = context.outputs.swapRemove(idx);
                     assert(ctx.output_context.id == output_id);
 
@@ -274,7 +275,6 @@ const zwlr = wayland.client.zwlr;
 const std = @import("std");
 const mem = std.mem;
 
-const Allocator = std.mem.Allocator;
 const BoundedArray = std.BoundedArray;
 
 const assert = std.debug.assert;

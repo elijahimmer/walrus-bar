@@ -183,7 +183,7 @@ pub fn init(area: Rect, config: BatteryConfig) !Battery {
         log.warn("Failed to open Battery Charge File with: {s}", .{@errorName(err)});
         return error.ChargeFileError;
     };
-    errdefer full_file.close();
+    errdefer charge_file.close();
 
     {
         const charge_metadata = charge_file.metadata() catch |err| {
@@ -205,7 +205,7 @@ pub fn init(area: Rect, config: BatteryConfig) !Battery {
         log.warn("Failed to open Battery Status File with: {s}", .{@errorName(err)});
         return error.StatusFileError;
     };
-    errdefer full_file.close();
+    errdefer status_file.close();
 
     {
         const status_metadata = status_file.metadata() catch |err| {

@@ -435,16 +435,6 @@ pub fn init(area: Rect, config: WorkspacesConfig) !Workspaces {
     };
 }
 
-// Deinitializes the widget, and frees the Workspaces.
-// This should only be called if this Widget was created
-// with `new`, (or allocated manually).
-pub fn deinitWidget(widget: *Widget, allocator: Allocator) void {
-    const self: *Workspaces = @fieldParentPtr("widget", widget);
-
-    self.deinit();
-    allocator.destroy(self);
-}
-
 /// Deinitializes the widget. This should only be called if
 /// this Widget was created with `init`.
 pub fn deinit(self: *Workspaces) void {

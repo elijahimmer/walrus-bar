@@ -38,7 +38,8 @@ logged_service_not_found: bool = false,
 // When error.ServiceNotFound is returned,
 // the state will be valid, just empty with an invalid thread
 pub fn init(self: *WorkspaceState) !void {
-    _ = self.rc.fetchAdd(1, .acq_rel);
+    _ = self.rc.fetchAdd(1, .monotonic);
+    errdefer _ = self.rc.fetchSub(1, .monotonic);
 
     if (!Impl.available()) {
         if (!self.logged_service_not_found) log.warn(@tagName(options.workspaces_provider) ++ " Not Found", .{});
@@ -76,16 +77,16 @@ pub fn deinit(self: *WorkspaceState) void {
         self.logged_service_not_found = false;
 
         if (self.worker_thread) |*thread| {
+            defer self.worker_thread = null;
+
             log.debug("Joining Worker...", .{});
             thread.join();
             log.debug("Worker Joined.", .{});
-
-            self.worker_thread = null;
         } else {
             log.debug("Worker not started.", .{});
         }
 
-        assert(self.rwlock.trylock());
+        assert(self.rwlock.tryLock());
         self.rwlock.unlock();
 
         self.* = .{

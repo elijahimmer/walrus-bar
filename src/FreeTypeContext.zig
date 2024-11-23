@@ -423,7 +423,7 @@ pub const LoadCharOptions = struct {
 ///
 /// char_slice should be a single UTF8 Codepoint.
 ///
-pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, args: LoadCharOptions) *Glyph {
+pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, args: LoadCharOptions) *const Glyph {
     assert(char_slice.len > 0);
 
     const utf8_char = unicode.utf8Decode(char_slice) catch |err| utf8_char: {
@@ -437,6 +437,8 @@ pub fn loadCharSlice(self: *FreeTypeContext, char_slice: []const u8, args: LoadC
 
 /// Returns a pointer to a `Glyph`. This pointer may be invalidated after another call to loadChar,
 ///     and should not be stored.
+///
+/// Asserts the character isn't '0' which means unknown.
 ///
 pub fn loadChar(self: *FreeTypeContext, char: u21, args: LoadCharOptions) *const Glyph {
     assert(char != 0);
@@ -662,7 +664,7 @@ fn cleanCache(self: *FreeTypeContext) void {
 }
 
 test global {
-    try init_global(std.testing.allocator);
+    try init_global(std.testing.allocator, null);
     defer global.deinit();
 }
 

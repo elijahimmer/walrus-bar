@@ -21,7 +21,7 @@ pub fn work(state: *WorkspaceState) void {
     while (state.rc.load(.seq_cst) > 0) {
         counter +%= 1;
 
-        std.time.sleep(std.time.ns_per_s);
+        std.time.sleep(std.time.ns_per_ms * 250);
 
         state.rwlock.lock();
         defer state.rwlock.unlock();
