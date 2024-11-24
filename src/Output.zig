@@ -110,10 +110,7 @@ pub fn layerSurfaceConfigure(output: *Output, wayland_context: *WaylandContext) 
     output.root_container.?.setArea(output.window_size.extendTo(Point.ZERO));
 
     if (output.shm_pool) |*shm_pool| {
-        shm_pool.resize(wayland_context, .{
-            .x = output.window_size.x,
-            .y = output.window_size.y,
-        }) catch |err| {
+        shm_pool.resize(wayland_context, output.window_size) catch |err| {
             log.warn("Failed to create Shared memory pool on output resize. error={s}", .{@errorName(err)});
             shm_pool.pool.destroy();
             return err;

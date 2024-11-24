@@ -67,7 +67,10 @@ pub fn checkForFileLeaks() void {
             log.warn("Failed to iterate open files directory with {s}", .{@errorName(err)});
             continue;
         };
-        assert(reserved_file != null);
+        if (reserved_file == null) {
+            log.err("Not all reserved files exist?", .{});
+            return;
+        }
     }
 
     iter_loop: while (fd_dir_iter.next()) |entry_maybe_null| {

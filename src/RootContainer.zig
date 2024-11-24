@@ -144,6 +144,7 @@ pub fn click(self: *RootContainer, button: MouseButton) void {
     }
 }
 
+/// Caller takes ownership and must call `deinit` when done.
 pub fn init(area: Rect) RootContainer {
     var root_container = RootContainer{
         .widget = .{
@@ -152,55 +153,36 @@ pub fn init(area: Rect) RootContainer {
         },
     };
 
-    if (options.clock_enabled) {
-        root_container.clock = Clock.init(
-            .{
-                .x = 0,
-                .y = 0,
-                .width = 1000,
-                .height = area.height,
-            },
-            config.clock,
-        );
-    }
+    const starting_area = Rect{
+        .x = 0,
+        .y = 0,
+        .width = 1000,
+        .height = area.height,
+    };
 
-    if (options.workspaces_enabled) workspaces: {
-        root_container.workspaces = Workspaces.init(
-            .{
-                .x = 0,
-                .y = 0,
-                .width = 1000,
-                .height = area.height,
-            },
-            config.workspaces,
-        ) catch |err| {
-            log.warn("Failed to initialize Workspace with: {s}", .{@errorName(err)});
-            break :workspaces;
-        };
-    }
+    inline for (.{
+        .{ "workspaces", Workspaces },
+        .{ "battery", Battery },
+        .{ "brightness", Brightness },
+        .{ "clock", Clock },
+    }) |entry| {
+        const field, const T = entry;
+        comptime assert(@hasDecl(options, field ++ "_enabled"));
+        comptime assert(std.meta.hasFn(T, "init"));
 
-    if (options.battery_enabled) battery: {
-        root_container.battery = Battery.init(.{
-            .x = 0,
-            .y = 0,
-            .width = 1000,
-            .height = area.height,
-        }, config.battery) catch |err| {
-            log.warn("Failed to initalized Battery with: {s}", .{@errorName(err)});
-            break :battery;
-        };
-    }
+        if (comptime @field(options, field ++ "_enabled")) create_widget: {
+            const config_entry = @field(config, field);
 
-    if (options.brightness_enabled) brightness: {
-        root_container.brightness = Brightness.init(.{
-            .x = 0,
-            .y = 0,
-            .width = 1000,
-            .height = area.height,
-        }, config.brightness) catch |err| {
-            log.warn("Failed to initalized Brightness with: {s}", .{@errorName(err)});
-            break :brightness;
-        };
+            const return_type = @typeInfo(@TypeOf(T.init)).Fn.return_type.?;
+
+            @field(root_container, field) = if (@typeInfo(return_type) == .ErrorUnion)
+                T.init(starting_area, config_entry) catch |err| {
+                    log.warn("Failed to initialize Workspace with: {s}", .{@errorName(err)});
+                    break :create_widget;
+                }
+            else
+                T.init(starting_area, config_entry);
+        }
     }
 
     root_container.setArea(area);
