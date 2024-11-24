@@ -1,4 +1,4 @@
-// Give these default log scope.
+/// Give these default log scope.
 const other_logging_scopes = [_]@TypeOf(.enum_literal){
     .default,
     .@"walrus-bar",
@@ -15,7 +15,7 @@ const other_logging_scopes = [_]@TypeOf(.enum_literal){
     .ShmPool,
 };
 
-// These have build script specified logging levels.
+/// These have build script specified logging levels.
 const log_scopes = [_]@TypeOf(.enum_literal){
     // General
     .Allocations,
@@ -86,6 +86,8 @@ pub fn logFn(
         .debug => .blue,
     };
 
+    // use a buffered writer to hopefully make it more efficient with
+    // the number of reads needed
     var buffered_writer = std.io.bufferedWriter(stderr.writer());
     const writer = buffered_writer.writer();
 
@@ -109,7 +111,7 @@ pub fn logFn(
     }
 }
 
-// TODO: Make this nicer.
+/// TODO: Make this nicer.
 pub const logging_scope_levels: [log_scopes.len]ScopeLevel = logging_scope_levels: {
     var scope_levels: [log_scopes.len]ScopeLevel = undefined;
     var scope_idx = 0;

@@ -54,6 +54,14 @@ pub fn checkForFileLeaks() void {
 
     const fd_dir_path = "/proc/self/fd/";
 
+    var fd_dir_real_path_buffer: [std.fs.max_path_bytes]u8 = undefined;
+
+    const fd_dir_real_path = std.fs.realpath(fd_dir_path, &fd_dir_real_path_buffer) catch |err| fd_dir_real_path: {
+        log.warn("Failed to get real path of open fd dir '" ++ fd_dir_path ++ "' with {s}", .{@errorName(err)});
+
+        break :fd_dir_real_path "";
+    };
+
     const fd_dir = std.fs.openDirAbsoluteZ(fd_dir_path, .{ .iterate = true }) catch |err| {
         log.err("Failed to open directory holding open files with {s}", .{@errorName(err)});
         return;
@@ -65,12 +73,16 @@ pub fn checkForFileLeaks() void {
     defer if (!found_leaks) log.info("No leaks found!", .{});
 
     var ignore_open_dir = false;
+    var terminals_open: u8 = 0;
 
-    iter_loop: while (fd_dir_iter.next()) |entry_maybe_null| {
+    // in|out|err, 3 in total
+    const max_terminals_open = 3;
+
+    iter_loop: while (fd_dir_iter.next()) |entry_maybe_null| { // no loop counter needed, none really possible.
         if (entry_maybe_null == null) break;
         const entry = &entry_maybe_null.?;
 
-        var path_buff: [posix.PATH_MAX]u8 = undefined;
+        var path_buff: [std.fs.max_path_bytes]u8 = undefined;
         const real_path = fd_dir.realpath(entry.name, &path_buff) catch |err| {
             switch (err) {
                 error.FileNotFound => unreachable,
@@ -80,46 +92,26 @@ pub fn checkForFileLeaks() void {
         };
 
         // ignore stdin/out/err files
-        if (mem.eql(u8, real_path, "/dev/pts/0")) {
+        if (mem.startsWith(u8, real_path, "/dev/pts/") or mem.startsWith(u8, real_path, "/dev/tty/")) {
+            terminals_open +|= 1;
+
+            if (terminals_open > max_terminals_open) log.warn("Too Many Terminal files open! path: '{s}'", .{real_path});
             continue;
         }
 
         // ignore the directory we are iterating through
-        if (mem.startsWith(u8, real_path, "/proc/") and mem.endsWith(u8, real_path, "/fd")) this_dir: {
-            const pid_str = real_path["/proc/".len .. real_path.len - "/fd".len];
-
-            const pid_dir = std.fmt.parseInt(posix.pid_t, pid_str, 10) catch break :this_dir;
-
-            // TODO: find a portable PID method.
-            const pid = std.os.linux.getpid();
-
-            // not the same PID
-            if (pid != pid_dir) break :this_dir;
-
+        if (mem.eql(u8, real_path, fd_dir_real_path)) {
+            defer ignore_open_dir = true;
+            // if it was already ignored, then there are multiple open.
             if (ignore_open_dir) {
                 log.warn("The open fd file directory '{s}' has been opened else ware!", .{real_path});
-                continue;
             }
-            ignore_open_dir = true;
 
-            continue;
+            continue :iter_loop;
         }
 
-        log.debug("file '{s}' open", .{entry.name});
-
-        switch (entry.kind) {
-            .sym_link => {
-                found_leaks = true;
-
-                log.warn("Failed to close file '{s}'", .{real_path});
-            },
-            else => {
-                // I'm pretty sure only sym links should be here, but we might as well...
-                found_leaks = true;
-
-                log.warn("Failed to close file '{s}' which is a {s}", .{ entry.name, @tagName(entry.kind) });
-            },
-        }
+        found_leaks = true;
+        log.warn("Failed to close file {s}: '{s}' which is a {s}", .{ entry.name, real_path, @tagName(entry.kind) });
     } else |err| {
         log.err("Failed to iterate open files directory with {s}", .{@errorName(err)});
         return;

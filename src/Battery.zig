@@ -16,7 +16,7 @@ const charging_transform = Transform.right;
 ///     so the charging glyph shows through,
 const charging_progress_area_alpha: u8 = 200;
 
-// The maximum length a battery status message can be.
+/// The maximum length a battery status message can be.
 const max_status_length = 64;
 
 pub const BatteryConfig = struct {

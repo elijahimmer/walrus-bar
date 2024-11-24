@@ -39,6 +39,7 @@ pub const InitArgs = struct {
     width: Size,
 };
 
+/// initializes the shm pool. Caller takes ownership and must `deinit` it when done.
 pub fn init(args: InitArgs) !ShmPool {
     assert(args.wayland_context.shm != null);
     assert(args.wayland_context.has_argb8888);
@@ -112,6 +113,7 @@ pub fn init(args: InitArgs) !ShmPool {
     };
 }
 
+/// 80% used should still be fine.
 inline fn resizeInternalShrinkSizeThreshold(total_buffer_size: u31, mapped_memory_len: u31) bool {
     return total_buffer_size >= mapped_memory_len * 8 / 10;
 }
@@ -265,7 +267,7 @@ fn resizeInternalFixNewBuffersOnError(shm_pool: *ShmPool, total_buffer_size: u31
             mmap_count.* -= 1;
 
             posix.ftruncate(shm_pool.fd, shm_pool.mapped_memory_len) catch |err| {
-                log.warn("Failed to shorten memory file to it's former length after error, with error {s}.", .{@errorName(err)});
+                log.warn("Failed to yep memory file to it's former length after error, with error {s}.", .{@errorName(err)});
             };
         },
     }
@@ -306,7 +308,8 @@ pub fn resize(shm_pool: *ShmPool, wayland_context: *WaylandContext, size: Point)
     const pool = new_buffers_result.pool;
     const mapped_memory_len = new_buffers_result.mapped_memory_len;
 
-    { // make sure the entire total_buffer is valid memory to use.
+    if (std.debug.runtime_safety) {
+        // make sure the entire total_buffer is valid memory to use.
         var counter: usize = 0;
         for (total_buffer) |byte| {
             counter +%= byte;
@@ -359,10 +362,10 @@ pub fn resize(shm_pool: *ShmPool, wayland_context: *WaylandContext, size: Point)
         posix.munmap(shm_pool.total_buffer);
         mmap_count -= 1;
     }
+    assert(mmap_count == 1);
 
     // changed the entire thing at once, so the state is not invalid
     // before everything has successed.
-    assert(mmap_count == 1);
     shm_pool.* = .{
         .pool = pool,
         .fd = fd,
@@ -379,6 +382,8 @@ pub fn resize(shm_pool: *ShmPool, wayland_context: *WaylandContext, size: Point)
     };
 }
 
+/// Converts a u8 buffer to a color buffer.
+/// Asserts the buffer is divisible by the size of Color
 pub fn u8ToColorBuffer(buffer: []u8) []Color {
     assert(buffer.len % @sizeOf(Color) == 0);
 
@@ -389,7 +394,7 @@ pub fn u8ToColorBuffer(buffer: []u8) []Color {
     return ret;
 }
 
-/// Caller takes ownership and must call destroy on returned buffer after use.
+/// Caller does *not* have ownership of buffer, do not destroy it.
 /// Returns null if no buffers are available (so just don't draw.)
 pub fn getBuffer(shm: *ShmPool) ?Tuple(&[_]type{ *wl.Buffer, []Color }) {
     const ret = ret: {
@@ -399,6 +404,7 @@ pub fn getBuffer(shm: *ShmPool) ?Tuple(&[_]type{ *wl.Buffer, []Color }) {
             break :ret .{ shm.buffer_1, shm.buffer_1_buffer };
         } else if (shm.buffer_2_free) {
             shm.buffer_2_free = false;
+
             break :ret .{ shm.buffer_2, shm.buffer_2_buffer };
         } else {
             // no buffers available.

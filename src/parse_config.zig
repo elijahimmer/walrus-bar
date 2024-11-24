@@ -63,14 +63,16 @@ pub fn parseConfig(T: type, config: *T, file: fs.File) ParseConfigError!void {
                 section_loop: inline for (@typeInfo(T).Struct.fields) |section_field| {
                     if (comptime ascii.eqlIgnoreCase(section_field.name, "internal")) continue :section_loop;
 
-                    if (ascii.eqlIgnoreCase(section_field.name, section_header)) break :section_loop;
-                } else {
+                    // section name is found
+                    if (ascii.eqlIgnoreCase(section_field.name, section_header)) {
+                        section_name = section_header;
+                        break :section_loop;
+                    }
+                } else { // section name not found.
                     log.warn("Unknown section name: '{s}', skipping section", .{section_header});
                     section_name = null;
                     continue :line_loop;
                 }
-
-                section_name = section_header;
             },
             .setting => |setting| {
                 assert(section_name != null);

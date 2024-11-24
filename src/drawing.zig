@@ -407,7 +407,7 @@ pub const Circle = struct {
         var x: Size = self.d / 2;
         var y: Size = 0;
 
-        while (x >= y) {
+        while (x >= y) { // no loop counter needed
             self.reflectPoint(draw_context, area, .{
                 .x = x,
                 .y = y,
@@ -483,7 +483,7 @@ pub const Circle = struct {
         var x: Size = self.d / 2;
         var y: Size = 0;
 
-        while (x >= y) {
+        while (x >= y) { // no loop counter needed
             self.reflectPointFillIn(draw_context, area, .{
                 .x = x,
                 .y = y,

@@ -630,6 +630,7 @@ fn cleanCache(self: *FreeTypeContext) void {
 
     {
         var iter = self.cache.iterator();
+        const cache_length = self.cache.count();
 
         for (0..num_to_remove) |_| {
             const glyph = iter.next() orelse break;
@@ -642,7 +643,11 @@ fn cleanCache(self: *FreeTypeContext) void {
 
         mem.sort(CleanInfo, glyphs_to_remove.slice(), {}, CleanInfo.lessThan);
 
-        while (iter.next()) |entry| {
+        var loop_counter: usize = 0;
+
+        while (iter.next()) |entry| : (loop_counter += 1) {
+            assert(loop_counter <= cache_length);
+
             const clean_info = CleanInfo{
                 .key = entry.key_ptr.*,
                 .time = entry.value_ptr.time,

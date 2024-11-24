@@ -397,8 +397,11 @@ pub fn init(area: Rect, config: WorkspacesConfig) !Workspaces {
     var symbols = WorkspaceSymbolArray{};
     var utf8_iter = unicode.Utf8Iterator{ .bytes = config.symbols, .i = 0 };
 
-    // No loop counter, append bounds it already.
-    while (utf8_iter.nextCodepoint()) |char| {
+    var loop_counter: usize = 0;
+
+    while (utf8_iter.nextCodepoint()) |char| : (loop_counter += 1) {
+        assert(loop_counter <= config.symbols.len);
+
         symbols.append(char) catch {
             log.warn("Too many workspace symbols given, only the first {} will be used. Increase max_workspace_count", .{max_workspace_count});
             break;
