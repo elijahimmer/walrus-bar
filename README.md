@@ -43,8 +43,15 @@ to optimize for speed and binary size respectively.
 
 ## Configuration
 Every option is available via the CLI args, but that can get annoying so you can also specify a configuration file.
-By default, it looks for the file at `$XDG_CONFIG_HOME/.config/walrus-bar/config.ini`, but the path
+By default, it looks for the file at `$XDG_CONFIG_HOME/.config/walrus-bar/`, but the path
 can be specified by the `--config-file=PATH` CLI argument.
+
+When a directory is specified with the `--config-file`, it will search that directory for files in that directory in this order:
+- walrus-bar-config.ini
+- walrus-bar.ini
+- config.ini
+
+If you want any added, please say so.
 
 For options try `walrus-bar --help`
 

@@ -2,6 +2,7 @@
 
 pub const Config = @This();
 
+/// Keep in sync with README.md#Configuration
 pub const config_file_possible_names = .{
     "walrus-bar-config.ini",
     "walrus-bar.ini",
@@ -178,6 +179,8 @@ fn parseArgv(allocator: Allocator) Allocator.Error!Config {
 
                     if (maybe_file) |file| {
                         config_file = file;
+
+                        log.info("loading config from file '{s}/{s}'", .{ config_path, possible_name });
                         break :directory;
                     } else |err| {
                         switch (err) {
@@ -231,7 +234,7 @@ pub fn getDefaultConfigPath() ?Path {
         return null;
     }
 
-    const from_config_home = "/walrus-bar/config.ini";
+    const from_config_home = "/walrus-bar";
 
     if (xdg_config_home.len > max_path_bytes - from_config_home.len) {
         log.warn("environment variable 'XDG_CONFIG_HOME' is too long to be a proper path", .{});
