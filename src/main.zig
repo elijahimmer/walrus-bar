@@ -1,6 +1,9 @@
 pub fn main() !void {
     defer if (std.debug.runtime_safety) checkForFileLeaks();
 
+    // we don't need it. We do use stdout in config
+    std.io.getStdIn().close();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{
         // we should only ever use it on the main (wayland) thread.
         .thread_safe = false,
@@ -61,36 +64,52 @@ pub fn checkForFileLeaks() void {
     var found_leaks = false;
     defer if (!found_leaks) log.info("No leaks found!", .{});
 
-    const reserved_file_count = 4;
-    for (0..reserved_file_count) |_| {
-        const reserved_file = fd_dir_iter.next() catch |err| {
-            log.warn("Failed to iterate open files directory with {s}", .{@errorName(err)});
-            continue;
-        };
-        if (reserved_file == null) {
-            log.err("Not all reserved files exist?", .{});
-            return;
-        }
-    }
+    var ignore_open_dir = false;
 
     iter_loop: while (fd_dir_iter.next()) |entry_maybe_null| {
         if (entry_maybe_null == null) break;
         const entry = &entry_maybe_null.?;
+
+        var path_buff: [posix.PATH_MAX]u8 = undefined;
+        const real_path = fd_dir.realpath(entry.name, &path_buff) catch |err| {
+            switch (err) {
+                error.FileNotFound => unreachable,
+                else => log.warn("Failed to get real path from sym link file '{s}' with {s}", .{ entry.name, @errorName(err) }),
+            }
+            continue :iter_loop;
+        };
+
+        // ignore stdin/out/err files
+        if (mem.eql(u8, real_path, "/dev/pts/0")) {
+            continue;
+        }
+
+        // ignore the directory we are iterating through
+        if (mem.startsWith(u8, real_path, "/proc/") and mem.endsWith(u8, real_path, "/fd")) this_dir: {
+            const pid_str = real_path["/proc/".len .. real_path.len - "/fd".len];
+
+            const pid_dir = std.fmt.parseInt(posix.pid_t, pid_str, 10) catch break :this_dir;
+
+            // TODO: find a portable PID method.
+            const pid = std.os.linux.getpid();
+
+            // not the same PID
+            if (pid != pid_dir) break :this_dir;
+
+            if (ignore_open_dir) {
+                log.warn("The open fd file directory '{s}' has been opened else ware!", .{real_path});
+                continue;
+            }
+            ignore_open_dir = true;
+
+            continue;
+        }
 
         log.debug("file '{s}' open", .{entry.name});
 
         switch (entry.kind) {
             .sym_link => {
                 found_leaks = true;
-
-                var path_buff: [posix.PATH_MAX]u8 = undefined;
-                const real_path = fd_dir.realpath(entry.name, &path_buff) catch |err| {
-                    switch (err) {
-                        error.FileNotFound => unreachable,
-                        else => log.warn("Failed to get real path from sym link file '{s}' with {s}", .{ entry.name, @errorName(err) }),
-                    }
-                    continue :iter_loop;
-                };
 
                 log.warn("Failed to close file '{s}'", .{real_path});
             },
@@ -156,6 +175,7 @@ const logging = @import("logging.zig");
 
 const std = @import("std");
 const posix = std.posix;
+const mem = std.mem;
 
 const assert = std.debug.assert;
 const maxInt = std.math.maxInt;

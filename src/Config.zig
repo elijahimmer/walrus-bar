@@ -2,6 +2,12 @@
 
 pub const Config = @This();
 
+pub const config_file_possible_names = .{
+    "walrus-bar-config.ini",
+    "walrus-bar.ini",
+    "config.ini",
+};
+
 pub const default_text_color = colors.rose;
 pub const default_background_color = colors.surface;
 pub const default_window_height = 28;
@@ -123,7 +129,7 @@ fn parseArgv(allocator: Allocator) Allocator.Error!Config {
 
         assert(fs.path.isAbsolute(config_path));
 
-        const config_file = fs.openFileAbsolute(config_path, .{}) catch |err| {
+        var config_file = fs.openFileAbsolute(config_path, .{}) catch |err| {
             switch (err) {
                 error.FileNotFound => log.warn("Config not found at `{s}`", .{config_path}),
                 else => log.warn("Failed to open configuration at `{s}` with: {s}", .{ config_path, @errorName(err) }),
@@ -139,32 +145,64 @@ fn parseArgv(allocator: Allocator) Allocator.Error!Config {
 
         const file_kind = metadata.kind();
 
-        if (file_kind != .file) {
-            log.warn("Specified config file isn't a file, it is a {s}", .{@tagName(file_kind)});
-            break :ini_config;
-        }
-
         const old_cwd = fs.cwd();
         defer old_cwd.setAsCwd() catch |err| {
             log.warn("Failed to set Current Working Directory Back to prior CWD with error: {s}", .{@errorName(err)});
         };
 
-        // change cwd to the config file so you can have paths relative to it.
-        change_cwd: {
-            const base_name = fs.path.basename(config_path);
-            const directory_path = config_path[0 .. config_path.len - base_name.len];
+        switch (file_kind) {
+            .file => file: {
+                const directory_path = fs.path.dirname(config_path) orelse break :file;
+                assert(directory_path.len != 0);
 
-            if (directory_path.len == 0) break :change_cwd;
+                const new_cwd = old_cwd.openDir(directory_path, .{}) catch |err| {
+                    log.warn("Failed to open directory '{s}' with error: {s}", .{ directory_path, @errorName(err) });
+                    break :file;
+                };
 
-            const new_cwd = old_cwd.openDir(directory_path, .{}) catch |err| {
-                log.warn("Failed to open directory: '{s}' with error: {s}", .{ directory_path, @errorName(err) });
-                break :change_cwd;
-            };
+                new_cwd.setAsCwd() catch |err| {
+                    log.warn("Failed to set directory '{s}' as current working directory. Config file path may break. error: {s}", .{ directory_path, @errorName(err) });
+                    break :file;
+                };
+            },
+            .directory => directory: {
+                var directory: fs.Dir = .{ .fd = config_file.handle };
+                defer directory.close();
 
-            new_cwd.setAsCwd() catch |err| {
-                log.warn("Failed to set directory '{s}' as current working directory with error: {s}", .{ directory_path, @errorName(err) });
-                break :change_cwd;
-            };
+                directory.setAsCwd() catch |err| {
+                    log.warn("Failed to set directory '{s}' as current working directory. Config file path may break. error: {s}.", .{ config_path, @errorName(err) });
+                };
+
+                inline for (config_file_possible_names) |possible_name| {
+                    const maybe_file = directory.openFileZ(possible_name, .{});
+
+                    if (maybe_file) |file| {
+                        config_file = file;
+                        break :directory;
+                    } else |err| {
+                        switch (err) {
+                            error.BadPathName,
+                            error.InvalidUtf8,
+                            error.InvalidWtf8,
+                            error.NameTooLong,
+                            error.NotDir,
+                            error.PathAlreadyExists,
+                            error.WouldBlock,
+                            => unreachable,
+                            error.FileNotFound => {},
+                            else => {
+                                log.warn("Failed to open config file " ++ possible_name ++ " in directory: {s}", .{config_path});
+                            },
+                        }
+                    }
+                }
+
+                log.warn("No config loaded, Specified config directory doesn't contain a file with a default config file name!", .{});
+            },
+            else => {
+                log.warn("No config loaded, Specified config file isn't a file or directory, it is a {s}", .{@tagName(file_kind)});
+                break :ini_config;
+            },
         }
 
         parseConfig(Config, &config, config_file) catch |err| {

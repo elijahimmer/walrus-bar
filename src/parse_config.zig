@@ -5,6 +5,8 @@ pub const max_setting_name_len = 64;
 
 pub const ParseConfigError = posix.MMapError || fs.File.StatError;
 
+/// Given a instantiated config struct and a file to a ini config,
+/// this reads the ini config and populates the config with then entries listed.
 pub fn parseConfig(T: type, config: *T, file: fs.File) ParseConfigError!void {
     const file_length = (try file.stat()).size;
     if (file_length == 0) return;

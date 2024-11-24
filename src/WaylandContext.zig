@@ -73,7 +73,9 @@ pub const InitError = error{ ConnectFailed, RoundtripFailed, OutOfMemory };
 pub fn init(wayland_context: *WaylandContext) InitError!void {
     // start wayland connection.
     const display = try wl.Display.connect(null);
+    errdefer display.disconnect();
     var registry = try display.getRegistry();
+    errdefer registry.destroy();
 
     wayland_context.* = WaylandContext{
         .display = display,
@@ -92,15 +94,42 @@ pub fn init(wayland_context: *WaylandContext) InitError!void {
 /// de-initialize the Wayland context and clean up all the Wayland objects.
 pub fn deinit(self: *WaylandContext) void {
     // destroy pointers first so it is less likely that a event will happen after the output was removed.
-    if (self.pointer) |pointer| pointer.release();
-    if (self.seat) |seat| seat.release();
+    if (self.pointer) |pointer| {
+        defer self.pointer = null;
+        pointer.release();
+    }
 
     for (self.outputs.slice()) |*output| output.deinit();
-    // no deinit outputs-array, no need.
 
-    if (self.shm) |shm| shm.destroy();
-    if (self.layer_shell) |layer_shell| layer_shell.destroy();
-    if (self.compositor) |compositor| compositor.destroy();
+    inline for (@typeInfo(WaylandContext).Struct.fields) |field| {
+        // if it has a name, it is a wayland object to destroy.
+        if (comptime mem.endsWith(u8, field.name, "_name")) {
+            const name = field.name[0 .. field.name.len - "_name".len];
+
+            comptime assert(name.len > 0);
+            comptime assert(@hasField(WaylandContext, name));
+
+            if (@field(self, name)) |w| {
+                defer @field(self, name) = null;
+
+                const optional_child = @typeInfo(@TypeOf(@field(self, name))).Optional.child;
+
+                const field_type = @typeInfo(optional_child).Pointer.child;
+
+                if (comptime std.meta.hasFn(field_type, "destroy")) {
+                    w.destroy();
+                } else if (comptime std.meta.hasFn(field_type, "release")) {
+                    w.release();
+                } else {
+                    @compileLog("'" ++ name ++ "' couldn't be destroyed or released.");
+                }
+            }
+        }
+    }
+
+    self.registry.destroy();
+
+    self.display.disconnect();
 
     self.* = undefined;
 }
@@ -208,7 +237,7 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                 const resource, const field = variable;
 
                 if (mem.orderZ(u8, global.interface, resource.getInterface().name) == .eq) {
-                    log_local.debug("global added: '{s}'", .{global.interface});
+                    log_local.debug("global with name {} added: '{s}'", .{ global.name, global.interface });
                     assert(@field(context, field) == null);
                     @field(context, field) = registry.bind(global.name, resource, resource.generated_version) catch @panic("Failed to bind resource '" ++ field ++ "'");
                     @field(context, field ++ "_name") = global.name;
@@ -217,7 +246,7 @@ pub fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, contex
                 }
             }
 
-            log_local.debug("unknown global ignored: '{s}'", .{global.interface});
+            log_local.debug("unknown global with name {} ignored: '{s}'", .{ global.name, global.interface });
         },
         .global_remove => |global| {
             for (context.outputs.slice(), 0..) |*output, idx| {

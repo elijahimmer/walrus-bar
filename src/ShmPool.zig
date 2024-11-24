@@ -197,7 +197,7 @@ fn resizeInternalMakeNewBuffer(shm_pool: *ShmPool, wayland_context: *WaylandCont
 
             // if the buffer is only a little smaller, don't allocate a new one.
             if (resizeInternalShrinkSizeThreshold(total_buffer_size, shm_pool.mapped_memory_len)) {
-                log.debug("Resizing down, keeping pool.!", .{});
+                log.debug("Resizing down, keeping pool!", .{});
                 return .{
                     .pool = shm_pool.pool,
                     .total_buffer = shm_pool.total_buffer[0..total_buffer_size],
