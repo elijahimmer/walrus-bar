@@ -34,6 +34,12 @@ layer_shell: ?*zwlr.LayerShellV1 = null,
 /// only valid when `layer_shell` is not null.
 layer_shell_name: u32 = undefined,
 
+/// handles window layer and placement (i.e. putting it up like a bar)
+xdg_wm_base: ?*xdg.WmBase = null,
+
+/// only valid when `layer_shell` is not null.
+xdg_wm_base_name: u32 = undefined,
+
 /// The seat that manages all inputs
 /// TODO: See if we need to store a list here.
 seat: ?*wl.Seat = null,
@@ -270,6 +276,7 @@ const config = &@import("Config.zig").global;
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const wp = wayland.client.wp;
+const xdg = wayland.client.xdg;
 const zwlr = wayland.client.zwlr;
 
 const std = @import("std");

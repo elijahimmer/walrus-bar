@@ -239,6 +239,9 @@ pub fn work(state: *WorkspaceState) void {
 
         var line_iter = mem.splitScalar(u8, resp_used, '\n');
 
+        state.rwlock.lock();
+        defer state.rwlock.unlock();
+
         var loop_counter: usize = 0;
         while (line_iter.next()) |line| : (loop_counter += 1) {
             assert(loop_counter < read_length);
@@ -288,9 +291,6 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
 
         log.debug("Set active workspace: {}", .{new_active});
 
-        state.rwlock.lock();
-        defer state.rwlock.unlock();
-
         const potential_wksp_idx = sort.lowerBound(WorkspaceID, new_active, state.workspaces.constSlice(), {}, sort.asc(WorkspaceID));
 
         assert(potential_wksp_idx <= state.workspaces.len);
@@ -314,9 +314,6 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
 
         log.debug("Created workspace: {}", .{new_wksp});
 
-        state.rwlock.lock();
-        defer state.rwlock.unlock();
-
         const new_wksp_idx = sort.lowerBound(WorkspaceID, new_wksp, state.workspaces.slice(), {}, sort.asc(WorkspaceID));
 
         // if there is a overflow, just continue and don't add it
@@ -330,9 +327,6 @@ pub fn processEvent(state: *WorkspaceState, event: []const u8, value: []const u8
         };
 
         log.debug("Destroyed workspace: {}", .{wksp_to_destroy});
-
-        state.rwlock.lock();
-        defer state.rwlock.unlock();
 
         const wksp_idx = sort.binarySearch(
             WorkspaceID,

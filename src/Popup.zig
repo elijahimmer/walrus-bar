@@ -21,6 +21,7 @@ xdg_popup: *xdg.Popup,
 /// The size of the window.
 window_size: Point = Point.ZERO,
 
+/// The memory pool for the popup.
 shm_pool: ShmPool,
 
 /// The callback to draw the next frame.
@@ -30,16 +31,16 @@ frame_callback: ?*wl.Callback = null,
 widget: TextBox,
 
 /// uses the area of the text_box_init_args for how big this should be.
-pub fn init(draw_context: *const DrawContext, text_box_init_args: TextBox.InitArgs) !Popup {
-    log.debug("Initializing popup for output: '{s}'", .{draw_context.output_context.name});
+pub fn init(output: *const Output, text_box_init_args: TextBox.InitArgs) !Popup {
+    log.debug("Initializing popup for output: '{s}'", .{output.output_context.name_str.constSlice()});
     const area = text_box_init_args.area;
     assert(area.x == 0);
     assert(area.y == 0);
 
-    const wayland_context = draw_context.wayland_context;
+    const wayland_context = output.wayland_context;
     assert(wayland_context.compositor != null);
     assert(wayland_context.xdg_wm_base != null);
-    assert(draw_context.surface != null);
+    assert(output.surface != null);
 
     const compositor = wayland_context.compositor.?;
     const xdg_wm_base = wayland_context.xdg_wm_base.?;
@@ -65,39 +66,33 @@ pub fn init(draw_context: *const DrawContext, text_box_init_args: TextBox.InitAr
     surface.commit();
     if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
 
-    var popup = Popup{
-        .draw_context = draw_context,
+    const frame_callback = surface.frame() catch @panic("Failed Getting Frame Callback.");
+    frame_callback.setListener(*WaylandContext, nextFrame, wayland_context);
+
+    return Popup{
+        .wayland_context = wayland_context,
         .surface = surface,
         .xdg_surface = xdg_surface,
         .xdg_positioner = xdg_positioner,
         .xdg_popup = xdg_popup,
 
         // the following are set by initializeShm
-        .shm_buffer = undefined,
-        .shm_fd = undefined,
-        .screen = undefined,
+        .shm_pool = try ShmPool.init(.{
+            .wayland_context = wayland_context,
+            .height = area.height,
+            .width = area.width,
+        }),
 
         // this is set after first draw.
         .frame_callback = undefined,
 
         .widget = TextBox.init(text_box_init_args),
     };
-
-    try popup.initializeShm(wayland_context);
-    surface.commit();
-    if (wayland_context.display.roundtrip() != .SUCCESS) @panic("Roundtrip Failed");
-
-    draw_context.surface.?.attach(draw_context.shm_buffer.?, 0, 0);
-
-    const frame_callback = surface.frame() catch @panic("Failed Getting Frame Callback.");
-    frame_callback.setListener(*WaylandContext, nextFrame, wayland_context);
-
-    return popup;
 }
 
 const InitializeShmError = posix.MMapError || posix.MemFdCreateError || posix.TruncateError;
 fn initializeShm(self: *Popup, wayland_context: *WaylandContext) InitializeShmError!void {
-    assert(self.draw_context.wayland_context == wayland_context);
+    assert(self.output.wayland_context == wayland_context);
 
     assert(wayland_context.shm != null);
 
@@ -131,7 +126,6 @@ fn initializeShm(self: *Popup, wayland_context: *WaylandContext) InitializeShmEr
 }
 
 pub fn deinit(self: *Popup) void {
-    log.debug("destroying popup for output: '{s}'", .{self.draw_context.output_context.name});
     self.surface.destroy();
     self.xdg_surface.destroy();
     self.xdg_positioner.destroy();
@@ -160,17 +154,15 @@ pub fn xdgSurfaceListener(xdg_surface: *xdg.Surface, event: xdg.Surface.Event, w
 }
 
 pub fn xdgPopupListener(xdg_popup: *xdg.Popup, event: xdg.Popup.Event, wayland_context: *WaylandContext) void {
-    const output_idx = wayland_context.findOutput(*const xdg.Popup, xdg_popup, struct {
-        pub fn check(draw_context: *const DrawContext, item: *const xdg.Popup) bool {
-            return draw_context.popup != null and draw_context.popup.?.xdg_popup == item;
+    const output = wayland_context.findOutput(*const xdg.Popup, xdg_popup, struct {
+        pub fn check(output: *const Output, item: *const xdg.Popup) bool {
+            return output.popup != null and output.popup.?.xdg_popup == item;
         }
-    }.check);
-    assert(output_idx != null);
+    }.check) orelse unreachable;
 
-    const draw_context = &wayland_context.outputs.items[output_idx.?];
-    assert(draw_context.wayland_context == wayland_context);
+    assert(output.wayland_context == wayland_context);
 
-    assert(draw_context.popup != null);
+    assert(output.popup != null);
 
     switch (event) {
         .configure => |configure| {
@@ -180,24 +172,23 @@ pub fn xdgPopupListener(xdg_popup: *xdg.Popup, event: xdg.Popup.Event, wayland_c
             //draw_context.popup.?.xdg_surface.ackConfigure(configure.serial);
         },
         .popup_done => {
-            draw_context.popup.?.deinit();
-            draw_context.popup = null;
+            output.popup.?.deinit();
+            output.popup = null;
         },
-        // ignore this.
-        .repositioned => {},
     }
 }
 
 pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_context: *WaylandContext) void {
     log.debug("Popup next frame.", .{});
+
     // make sure no other events can happen.
     switch (event) {
         .done => {},
     }
 
     const output_checker = struct {
-        pub fn checker(draw_context: *const DrawContext, target: *wl.Callback) bool {
-            return draw_context.popup != null and draw_context.popup.?.frame_callback == target;
+        pub fn checker(output: *const Output, target: *wl.Callback) bool {
+            return output.popup != null and output.popup.?.frame_callback == target;
         }
     }.checker;
 
@@ -207,12 +198,21 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
         callback,
         &output_checker,
     ) orelse @panic("Output not found for drawing!");
+    assert(output.popup != null);
+    assert(output.popup.?.frame_callback != null);
 
     const popup = &output.popup.?;
 
-    const buffer, const screen = popup.shm_pool.getBuffer();
+    defer {
+        // make new frame callback
+        popup.frame_callback.?.destroy();
+        popup.frame_callback = popup.surface.frame() catch @panic("Failed Getting Frame Callback.");
+        popup.frame_callback.?.setListener(*WaylandContext, nextFrame, wayland_context);
 
-    _ = buffer;
+        popup.surface.commit();
+    }
+
+    const buffer, const screen = popup.shm_pool.getBuffer() orelse return;
 
     var draw_context = DrawContext{
         .surface = output.surface.?,
@@ -226,17 +226,10 @@ pub fn nextFrame(callback: *wl.Callback, event: wl.Callback.Event, wayland_conte
     defer draw_context.deinit();
     defer popup.full_redraw = false;
 
-    popup.widget.draw();
+    popup.widget.draw(&draw_context);
 
     // commit the changes.
-    popup.surface.attach(popup.shm_buffer, 0, 0);
-
-    // make new frame callback
-    popup.frame_callback.destroy();
-    popup.frame_callback = popup.surface.frame() catch @panic("Failed Getting Frame Callback.");
-    popup.frame_callback.setListener(*WaylandContext, nextFrame, wayland_context);
-
-    popup.surface.commit();
+    popup.surface.attach(buffer, 0, 0);
 }
 
 const constants = @import("constants.zig");
@@ -250,9 +243,10 @@ const Rect = drawing.Rect;
 
 const TextBox = @import("TextBox.zig");
 
-const ShmPool = @import("ShmPool.zig");
 const WaylandContext = @import("WaylandContext.zig");
 const DrawContext = @import("DrawContext.zig");
+const ShmPool = @import("ShmPool.zig");
+const Output = @import("Output.zig");
 
 const wayland = @import("wayland");
 const wl = wayland.client.wl;

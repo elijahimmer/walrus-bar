@@ -49,11 +49,6 @@ pub fn deinit(output: *Output) void {
 }
 
 pub fn outputChanged(output: *Output, wayland_context: *WaylandContext) !void {
-    assert(wayland_context.compositor != null);
-    assert(wayland_context.layer_shell != null);
-
-    // if it is zero sized, no need for drawing or anything.
-    // if the surface isn't set up yet, do so.
     if (output.surface == null) {
         assert(output.layer_surface == null);
 
@@ -83,7 +78,11 @@ pub fn outputChanged(output: *Output, wayland_context: *WaylandContext) !void {
     } else {
         assert(output.layer_surface != null);
     }
+}
 
+pub fn layerSurfaceConfigure(output: *Output, wayland_context: *WaylandContext) !void {
+    assert(wayland_context.compositor != null);
+    assert(wayland_context.layer_shell != null);
     assert(output.surface != null);
     assert(output.layer_surface != null);
 
@@ -100,6 +99,16 @@ pub fn outputChanged(output: *Output, wayland_context: *WaylandContext) !void {
         return;
     }
 
+    output.full_redraw = true;
+
+    //TODO: Implement root container resizing.
+    if (output.root_container == null) {
+        output.root_container = RootContainer.init(output.window_size.extendTo(Point.ZERO));
+    }
+    assert(output.root_container != null);
+
+    output.root_container.?.setArea(output.window_size.extendTo(Point.ZERO));
+
     if (output.shm_pool) |*shm_pool| {
         shm_pool.resize(wayland_context, .{
             .x = output.window_size.x,
@@ -113,8 +122,8 @@ pub fn outputChanged(output: *Output, wayland_context: *WaylandContext) !void {
         output.shm_pool = ShmPool.init(.{
             .wayland_context = wayland_context,
 
-            .width = output.window_size.x,
-            .height = output.window_size.y,
+            .width = output.root_container.?.widget.area.width,
+            .height = output.root_container.?.widget.area.height,
         }) catch |err| {
             log.warn("Failed to create Shared memory pool on output resize. error={s}", .{@errorName(err)});
             return err;
@@ -124,16 +133,6 @@ pub fn outputChanged(output: *Output, wayland_context: *WaylandContext) !void {
         output.shm_pool.deinit();
         output.shm_pool = null;
     }
-
-    output.full_redraw = true;
-
-    //TODO: Implement root container resizing.
-    if (output.root_container == null) {
-        output.root_container = RootContainer.init(output.window_size.extendTo(Point.ZERO));
-    }
-    assert(output.root_container != null);
-
-    output.root_container.?.setArea(output.window_size.extendTo(Point.ZERO));
 
     output.draw();
 
@@ -170,6 +169,7 @@ pub fn draw(output: *Output) void {
         @memset(screen, config.general.background_color);
     }
 
+    // draw, but no errors are possible.
     output.root_container.?.draw(&draw_context) catch |err| switch (err) {};
 
     // add the changes to the surface.
@@ -230,6 +230,10 @@ pub fn layerSurfaceListener(layer_surface: *zwlr.LayerSurfaceV1, event: zwlr.Lay
             output.window_size.y = @intCast(configure.height);
 
             layer_surface.ackConfigure(configure.serial);
+
+            output.layerSurfaceConfigure(wayland_context) catch |err| {
+                log.warn("Failed to configure layer surface with error {s}", .{@errorName(err)});
+            };
         },
         .closed => {
             // TODO: Make sure this is cleaned up properly. I think it is...

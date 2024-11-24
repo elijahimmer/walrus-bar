@@ -11,8 +11,12 @@ pool: *wl.ShmPool,
 /// the filed descriptor for the shm pool.
 fd: posix.fd_t,
 
+/// Wayland only supports 'i32's as buffer sizes, so
+/// this uses a u31 to have the same range, with no negatives.
+mapped_memory_len: u31,
+
 /// the entire mmap'ed area's buffer.
-total_buffer: []align(std.mem.page_size) u8,
+total_buffer: []align(mem.page_size) u8,
 
 /// The first of two buffers to use. This one is prioritised.
 buffer_1: *wl.Buffer,
@@ -79,7 +83,7 @@ pub fn init(args: InitArgs) !ShmPool {
     errdefer buffer_1.destroy();
 
     const buffer_1_buffer = u8ToColorBuffer(total_buffer[0..size]);
-    assert(buffer_1_buffer.len == @as(usize, @intCast(width)) * height);
+    assert(buffer_1_buffer.len == @as(u31, @intCast(width)) * height);
 
     buffer_1.setListener(*WaylandContext, bufferListener, args.wayland_context);
 
@@ -97,6 +101,7 @@ pub fn init(args: InitArgs) !ShmPool {
         .fd = fd,
 
         .total_buffer = total_buffer,
+        .mapped_memory_len = @intCast(total_buffer.len),
 
         .buffer_1 = buffer_1,
         .buffer_1_buffer = buffer_1_buffer,
@@ -107,8 +112,181 @@ pub fn init(args: InitArgs) !ShmPool {
     };
 }
 
+inline fn resizeInternalShrinkSizeThreshold(total_buffer_size: u31, mapped_memory_len: u31) bool {
+    return total_buffer_size >= mapped_memory_len * 8 / 10;
+}
+
+const ResizeInternalMakeNewBufferResult = struct {
+    pool: *wl.ShmPool,
+    total_buffer: []align(mem.page_size) u8,
+    mapped_memory_len: u31,
+};
+
+fn resizeInternalMakeNewBuffer(shm_pool: *ShmPool, wayland_context: *WaylandContext, total_buffer_size: u31, mmap_count: *u16) !ResizeInternalMakeNewBufferResult {
+    const buffer_order = std.math.order(total_buffer_size, shm_pool.total_buffer.len);
+
+    assert(mmap_count.* == 1);
+    defer assert(mmap_count.* == 1 or (mmap_count.* == 2 and buffer_order == .lt));
+
+    switch (buffer_order) {
+        // if the size is equal, nothing to do.
+        .eq => unreachable,
+        .gt => {
+            const mapped_memory_order = std.math.order(total_buffer_size, shm_pool.mapped_memory_len);
+
+            switch (mapped_memory_order) {
+                // just continue, this is the normal case.
+                .gt => {},
+                // the memory expanded, but we still have some available space, just use that.
+                .eq, .lt => {
+                    log.info("Resizing up, keeping pool size!", .{});
+                    var total_buffer = shm_pool.total_buffer;
+                    // should be save given we have then entire space up to shm_pool.mapped_memory_len.
+                    total_buffer.len = total_buffer_size;
+
+                    return .{
+                        .pool = shm_pool.pool,
+                        .total_buffer = total_buffer,
+                        .mapped_memory_len = shm_pool.mapped_memory_len,
+                    };
+                },
+            }
+
+            log.info("Resizing up, increasing pool!", .{});
+
+            // TODO: don't change backing file until all of the shm_pool buffers to free and destroyed...
+            // update mem file size
+            posix.ftruncate(shm_pool.fd, total_buffer_size) catch |err| {
+                log.warn("Failed to resize memory file with error {s}", .{@errorName(err)});
+                return err;
+            };
+            // shorten the file back down on error.
+            errdefer posix.ftruncate(shm_pool.fd, shm_pool.total_buffer.len) catch |err| {
+                log.warn("Failed to shorten memory file to it's former length after error, with error {s}.", .{@errorName(err)});
+            };
+
+            // increase it now as we did increase the mapped memory.
+            shm_pool.mapped_memory_len = total_buffer_size;
+
+            // re-mmap the new buffer for the new size.
+            const total_buffer = posix.mmap(
+                null,
+                total_buffer_size,
+                posix.PROT.READ | posix.PROT.WRITE,
+                .{ .TYPE = .SHARED },
+                shm_pool.fd,
+                0,
+            ) catch |err| {
+                log.warn("Failed to reallocate shm pool's buffer during resize with error {s}", .{@errorName(err)});
+                return err;
+            };
+            assert(mmap_count.* == 1);
+
+            // remove the old buffer and resize the pool.
+            posix.munmap(shm_pool.total_buffer);
+            shm_pool.pool.resize(total_buffer_size);
+
+            return .{
+                .pool = shm_pool.pool,
+                .total_buffer = total_buffer,
+                .mapped_memory_len = @intCast(total_buffer.len),
+            };
+        },
+        .lt => {
+            assert(total_buffer_size <= shm_pool.mapped_memory_len);
+
+            // if the buffer is only a little smaller, don't allocate a new one.
+            if (resizeInternalShrinkSizeThreshold(total_buffer_size, shm_pool.mapped_memory_len)) {
+                log.debug("Resizing down, keeping pool.!", .{});
+                return .{
+                    .pool = shm_pool.pool,
+                    .total_buffer = shm_pool.total_buffer[0..total_buffer_size],
+                    .mapped_memory_len = shm_pool.mapped_memory_len,
+                };
+            }
+            log.debug("Resizing down!", .{});
+
+            posix.ftruncate(shm_pool.fd, total_buffer_size) catch |err| {
+                log.warn("Failed to resize memory file with error {s}", .{@errorName(err)});
+                return err;
+            };
+            // shorten the file back down on error.
+            errdefer posix.ftruncate(shm_pool.fd, shm_pool.total_buffer.len) catch |err| {
+                log.warn("Failed to shorten memory file to it's former length after error, with error {s}.", .{@errorName(err)});
+            };
+
+            const pool = wayland_context.shm.?.createPool(shm_pool.fd, total_buffer_size) catch |err| {
+                log.warn("Failed to create new memory pool while resizing existing with error: {s}", .{@errorName(err)});
+                return err;
+            };
+
+            assert(mmap_count.* == 1);
+            const total_buffer = posix.mmap(
+                null,
+                total_buffer_size,
+                posix.PROT.READ | posix.PROT.WRITE,
+                .{ .TYPE = .SHARED },
+                shm_pool.fd,
+                0,
+            ) catch |err| {
+                log.warn("Failed to reallocate shm pool's buffer during resize with error {s}", .{@errorName(err)});
+                return err;
+            };
+            mmap_count.* += 1;
+
+            return .{
+                .pool = pool,
+                .total_buffer = total_buffer,
+                .mapped_memory_len = @intCast(total_buffer.len),
+            };
+        },
+    }
+}
+
+fn resizeInternalFixNewBuffersOnError(shm_pool: *ShmPool, total_buffer_size: u31, args: ResizeInternalMakeNewBufferResult, mmap_count: *u16) void {
+    const buffer_order = std.math.order(total_buffer_size, shm_pool.total_buffer.len);
+
+    assert(mmap_count.* == 1 or (mmap_count.* == 2 and buffer_order == .lt));
+    defer assert(mmap_count.* == 1);
+
+    switch (buffer_order) {
+        .eq => unreachable,
+        // When the buffer was increased, we will take a small memory
+        // leakage if it failed to successfully make the new buffers.
+        // What else can re really do?
+        .gt => {},
+        .lt => {
+            // when only a small buffer size change, just ignore the
+            if (resizeInternalShrinkSizeThreshold(total_buffer_size, shm_pool.mapped_memory_len)) return;
+
+            args.pool.destroy();
+
+            posix.munmap(args.total_buffer);
+            mmap_count.* -= 1;
+
+            posix.ftruncate(shm_pool.fd, shm_pool.mapped_memory_len) catch |err| {
+                log.warn("Failed to shorten memory file to it's former length after error, with error {s}.", .{@errorName(err)});
+            };
+        },
+    }
+}
+
 /// Resize the memory pool to hold displays of size `size`
+/// The memory pool is still in a valid state if an error happens, the resize just don't happen.
+///
+/// If a resize would make the pool larger, it is still larger after the call, but it is
+///     still valid as the buffers are not updated.
+///
 pub fn resize(shm_pool: *ShmPool, wayland_context: *WaylandContext, size: Point) !void {
+    assert(wayland_context.shm != null);
+
+    var mmap_count: u16 = 1;
+
+    assert(mmap_count == 1);
+    defer assert(mmap_count == 1);
+
+    const fd = shm_pool.fd;
+
     const width: u31 = size.x;
     const height: u31 = size.y;
     const stride = width * @sizeOf(Color);
@@ -116,53 +294,49 @@ pub fn resize(shm_pool: *ShmPool, wayland_context: *WaylandContext, size: Point)
     const buffer_size = stride * @as(u31, height);
     const total_buffer_size = buffer_size * NUMBER_OF_BUFFERS;
 
-    switch (std.math.order(total_buffer_size, shm_pool.total_buffer.len)) {
-        // if the size is equal, nothing to do.
-        .eq => return,
-        .gt => {
-            shm_pool.pool.resize(buffer_size);
-        },
-        .lt => {
-            const pool = try wayland_context.shm.?.createPool(shm_pool.fd, buffer_size);
-            // set after so if it fails to make the pool, don't mess up.
-            shm_pool.pool.destroy();
-            shm_pool.pool = pool;
-        },
+    // if no resize needed, just return.
+    if (total_buffer_size == shm_pool.total_buffer.len) return;
+
+    const new_buffers_result = try shm_pool.resizeInternalMakeNewBuffer(wayland_context, total_buffer_size, &mmap_count);
+    errdefer shm_pool.resizeInternalFixNewBuffersOnError(total_buffer_size, new_buffers_result, &mmap_count);
+
+    assert(mmap_count == 1 or mmap_count == 2);
+
+    const total_buffer = new_buffers_result.total_buffer;
+    const pool = new_buffers_result.pool;
+    const mapped_memory_len = new_buffers_result.mapped_memory_len;
+
+    { // make sure the entire total_buffer is valid memory to use.
+        var counter: usize = 0;
+        for (total_buffer) |byte| {
+            counter +%= byte;
+            mem.doNotOptimizeAway(byte);
+        }
+        mem.doNotOptimizeAway(counter);
     }
 
-    const fd = shm_pool.fd;
-    const pool = shm_pool.pool;
-
-    // TODO: don't change backing file until all of the shm_pool buffers to free and destroyed...
-    // update mem file size
-    try posix.ftruncate(fd, total_buffer_size);
-
-    // re-mmap the new buffer for the new size.
-    const total_buffer = try posix.mmap(
-        null,
-        total_buffer_size,
-        posix.PROT.READ | posix.PROT.WRITE,
-        .{ .TYPE = .SHARED },
-        fd,
-        0,
-    );
-    errdefer posix.munmap(total_buffer);
     assert(total_buffer.len == total_buffer_size);
 
     // start first buffer at 0.
-    const buffer_1 = try pool.createBuffer(0, width, height, stride, Color.FORMAT);
+    const buffer_1 = pool.createBuffer(0, width, height, stride, Color.FORMAT) catch |err| {
+        log.warn("Failed to create new buffer on memory pool resize with error {s}", .{@errorName(err)});
+        return err;
+    };
     errdefer buffer_1.destroy();
+
+    // start second buffer after first.
+    const buffer_2 = pool.createBuffer(buffer_size, width, height, stride, Color.FORMAT) catch |err| {
+        log.warn("Failed to create new buffer on memory pool resize with error {s}", .{@errorName(err)});
+        return err;
+    };
+    errdefer buffer_2.destroy();
 
     // make sure the buffer is correct.
     const buffer_1_buffer = u8ToColorBuffer(total_buffer[0..buffer_size]);
-    assert(buffer_1_buffer.len == @as(usize, width) * height);
+    assert(buffer_1_buffer.len == @as(u31, width) * height);
 
     // set new listener
     buffer_1.setListener(*WaylandContext, bufferListener, wayland_context);
-
-    // start second buffer after first.
-    const buffer_2 = try pool.createBuffer(buffer_size, width, height, stride, Color.FORMAT);
-    errdefer buffer_2.destroy();
 
     // make sure the buffer is correct.
     const buffer_2_buffer = u8ToColorBuffer(total_buffer[buffer_size..]);
@@ -171,20 +345,30 @@ pub fn resize(shm_pool: *ShmPool, wayland_context: *WaylandContext, size: Point)
     // set listener
     buffer_2.setListener(*WaylandContext, bufferListener, wayland_context);
 
-    // deinit the rest at the end, so if it does wrong we are not
-    // in an invalid state.
-
-    // destroy old mmap to buffer.
-    posix.munmap(shm_pool.total_buffer);
+    // Only destroy at the end, so we don't cause an invalid state.
     // if we can destroy the old buffers, do so, otherwise the listener will.
     if (shm_pool.buffer_1_free) shm_pool.buffer_1.destroy();
     if (shm_pool.buffer_2_free) shm_pool.buffer_2.destroy();
 
+    if (shm_pool.pool != pool) shm_pool.pool.destroy();
+
+    assert(mmap_count == 1 or mmap_count == 2);
+    if (shm_pool.total_buffer.ptr != total_buffer.ptr and total_buffer_size < shm_pool.total_buffer.len) {
+        assert(mmap_count == 2);
+
+        posix.munmap(shm_pool.total_buffer);
+        mmap_count -= 1;
+    }
+
+    // changed the entire thing at once, so the state is not invalid
+    // before everything has successed.
+    assert(mmap_count == 1);
     shm_pool.* = .{
         .pool = pool,
         .fd = fd,
 
         .total_buffer = total_buffer,
+        .mapped_memory_len = mapped_memory_len,
 
         .buffer_1 = buffer_1,
         .buffer_1_buffer = buffer_1_buffer,
@@ -236,9 +420,13 @@ pub fn deinit(shm: *ShmPool) void {
 
     posix.close(shm.fd);
     posix.munmap(shm.total_buffer);
+
+    shm.* = undefined;
 }
 
 pub fn bufferListener(buffer: *wl.Buffer, event: wl.Buffer.Event, wayland_context: *WaylandContext) void {
+    assert(wayland_context.shm != null);
+
     const output_checker = struct {
         pub fn checker(output: *const Output, target: *wl.Buffer) bool {
             if (output.shm_pool == null) return false;
@@ -307,11 +495,13 @@ const zwlr = wayland.client.zwlr;
 
 const std = @import("std");
 const posix = std.posix;
+const mem = std.mem;
 
-const Tuple = std.meta.Tuple;
-const Allocator = std.mem.Allocator;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
+const Allocator = std.mem.Allocator;
+const Tuple = std.meta.Tuple;
 
+const runtime_safety = std.debug.runtime_safety;
 const assert = std.debug.assert;
 
 const log = std.log.scoped(.ShmPool);

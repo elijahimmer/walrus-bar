@@ -111,15 +111,27 @@ test {
     std.testing.refAllDecls(@import("workspaces/hyprland.zig"));
     std.testing.refAllDecls(@import("workspaces/testing.zig"));
     std.testing.refAllDecls(@import("workspaces/none.zig"));
+    std.testing.refAllDecls(@import("FreeTypeContext.zig"));
+    std.testing.refAllDecls(@import("freetype_utils.zig"));
+    std.testing.refAllDecls(@import("WaylandContext.zig"));
+    std.testing.refAllDecls(@import("OutputContext.zig"));
     std.testing.refAllDecls(@import("RootContainer.zig"));
+    std.testing.refAllDecls(@import("parse_config.zig"));
+    std.testing.refAllDecls(@import("DrawContext.zig"));
+    std.testing.refAllDecls(@import("draw_bitmap.zig"));
     std.testing.refAllDecls(@import("Brightness.zig"));
-    std.testing.refAllDecls(@import("TextBox.zig"));
+    std.testing.refAllDecls(@import("seat_utils.zig"));
+    std.testing.refAllDecls(@import("constants.zig"));
     std.testing.refAllDecls(@import("Battery.zig"));
+    std.testing.refAllDecls(@import("drawing.zig"));
+    std.testing.refAllDecls(@import("TextBox.zig"));
+    std.testing.refAllDecls(@import("logging.zig"));
+    std.testing.refAllDecls(@import("ShmPool.zig"));
+    std.testing.refAllDecls(@import("colors.zig"));
+    std.testing.refAllDecls(@import("Config.zig"));
+    std.testing.refAllDecls(@import("Output.zig"));
     std.testing.refAllDecls(@import("Clock.zig"));
-    std.testing.refAllDecls(FreeTypeContext);
-    std.testing.refAllDecls(WaylandContext);
-    std.testing.refAllDecls(DrawContext);
-    std.testing.refAllDecls(Config);
+    std.testing.refAllDecls(@import("Popup.zig"));
 }
 
 pub const std_options = .{
