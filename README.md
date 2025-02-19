@@ -1,3 +1,5 @@
+Moved to codeberg https://codeberg.org/Elijah-Immer/walrus-bar
+
 # Walrus Bar
 A `zwlr-layer-shell-unstable-v1` Status bar for Wayland.
 If you don't know what that means, it just means it's a status bar for linux
